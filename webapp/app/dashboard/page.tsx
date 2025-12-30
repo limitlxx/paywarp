@@ -19,6 +19,8 @@ import {
 } from "lucide-react"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts"
 import Link from "next/link"
+import { useState } from "react"
+import { DepositModal } from "@/components/modals/deposit-modal"
 
 const data = [
   { name: "Mon", inflow: 400, outflow: 240 },
@@ -31,6 +33,8 @@ const data = [
 ]
 
 export default function Dashboard() {
+    const [isDepositOpen, setIsDepositOpen] = useState(false)
+  
   return (
     <div className="min-h-screen gradient-bg pb-24">
       <SimpleHeader />
@@ -137,10 +141,7 @@ export default function Dashboard() {
               <div className="flex flex-col sm:flex-row gap-3">
                 <Button
                   className="gradient-primary text-white border-0 flex-1 h-14 text-xl font-bold gap-2 shadow-lg shadow-purple-500/20 hover:scale-[1.02] transition-transform"
-                  onClick={() => {
-                    // This would typically open a universal deposit modal
-                    console.log("[v0] Universal Deposit & Auto-Split triggered")
-                  }}
+                   onClick={() => setIsDepositOpen(true)}
                 >
                   <Plus className="w-6 h-6" />
                   Deposit & Auto-Split
@@ -244,6 +245,9 @@ export default function Dashboard() {
           </Link>
         </div>
       </main>
+
+      <DepositModal open={isDepositOpen} onOpenChange={setIsDepositOpen} bucketId="auto-split" />
+      
 
       <BottomNav />
     </div>

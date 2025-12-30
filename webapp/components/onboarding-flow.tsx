@@ -101,7 +101,7 @@ export function OnboardingFlow() {
               </div>
 
               <div className="text-[10px] text-zinc-600 font-medium tracking-wide">
-                built with ☕ by <span className="underline underline-offset-4 decoration-zinc-800">Adex</span>
+                built with ☕ by <span className="underline underline-offset-4 decoration-zinc-800">Limitlxx</span>
               </div>
             </div>
           </motion.div>
@@ -186,7 +186,7 @@ export function OnboardingFlow() {
                 animate={{ scale: 1.5, opacity: 1 }}
                 className="text-4xl font-bold tracking-[1em] text-white"
               >
-                WARP
+                PAYWARP
               </motion.h2>
             </div>
           </motion.div>
