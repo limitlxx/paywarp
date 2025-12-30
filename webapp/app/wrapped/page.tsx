@@ -254,7 +254,7 @@ export default function WrappedExperience() {
         </div>
         <div className="flex justify-between items-center px-4">
           <div className="flex flex-col">
-            <span className="text-[10px] font-black tracking-[0.2em] text-white/50 uppercase">BLOCKWRAP © 2025</span>
+            <span className="text-[10px] font-black tracking-[0.2em] text-white/50 uppercase">PayWarp © 2025</span>
             <div className="w-8 h-0.5 bg-white/20 mt-1" />
           </div>
           <Link href="/dashboard" className="text-white/40 hover:text-white transition-colors">

@@ -148,7 +148,7 @@ export default function Dashboard() {
                 </Button>
                 <div className="flex flex-col justify-center px-2">
                   <p className="text-xs text-purple-400 font-bold uppercase tracking-widest">Smart Routing</p>
-                  <p className="text-sm text-muted-foreground whitespace-nowrap">Directly to your 8 active buckets</p>
+                  <p className="text-sm text-muted-foreground whitespace-nowrap">Directly to your 4 active buckets</p>
                 </div>
               </div>
             </CardContent>
