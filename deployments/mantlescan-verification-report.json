@@ -1,0 +1,85 @@
+{
+  "network": "Mantle Sepolia",
+  "chainId": 5003,
+  "verificationDate": "2026-01-05",
+  "verifierUrl": "https://api.etherscan.io/v2/api?chainid=5003",
+  "verificationMethod": "Etherscan V2 API",
+  "contracts": {
+    "MockERC20": {
+      "address": "0x93B3e03e9Ca401Ca79150C406a74430F1ff70EA8",
+      "name": "Mock USDC",
+      "symbol": "USDC",
+      "decimals": 6,
+      "guid": "vubwqrtmct2fct7ac1udgxvjrhvejrqqqgaxfvaas1x4ih8gt1",
+      "explorerUrl": "https://etherscan.io/address/0x93b3e03e9ca401ca79150c406a74430f1ff70ea8",
+      "status": "✅ VERIFIED",
+      "constructorArgs": "Mock USDC, USDC, 6"
+    },
+    "MockUSDY": {
+      "address": "0xCE6C8F97241f455A3498711C28D468A50559673f",
+      "name": "Mock USDY",
+      "symbol": "USDY",
+      "apy": "4.5%",
+      "guid": "2ke36yys4iuftm4cgwj9wgrukg1s29zqljpfbmabznrtgdyc1v",
+      "explorerUrl": "https://etherscan.io/address/0xce6c8f97241f455a3498711c28d468a50559673f",
+      "status": "✅ VERIFIED",
+      "constructorArgs": "Mock USDY, USDY, 450"
+    },
+    "MockMUSD": {
+      "address": "0xA61F1287B3aC96D7B6ab75e6190DEcaad68Ad641",
+      "name": "Mock mUSD",
+      "symbol": "mUSD",
+      "apy": "3.2%",
+      "guid": "2cxixkukiqy7ru94t9xpbulyagqqdxiqrv8nttm5lg4kdtxxic",
+      "explorerUrl": "https://etherscan.io/address/0xa61f1287b3ac96d7b6ab75e6190decaad68ad641",
+      "status": "✅ VERIFIED",
+      "constructorArgs": "Mock mUSD, mUSD, 320"
+    },
+    "BucketVaultUpgradeable": {
+      "address": "0x89c70d73C6F02DFf40Ee0c3b2Ccf5e9D4ED62871",
+      "type": "Implementation Contract",
+      "guid": "kq5cu7rq9rkw7l8zfkmmarmsdkqsjgit6cbijeb1wujwkg9hce",
+      "explorerUrl": "https://etherscan.io/address/0x89c70d73c6f02dff40ee0c3b2ccf5e9d4ed62871",
+      "status": "✅ VERIFIED",
+      "constructorArgs": "none (upgradeable)"
+    },
+    "PayrollEngineUpgradeable": {
+      "address": "0x0bF6e5d289151E7Ac34f8c746df65e38aA9BC0De",
+      "type": "Implementation Contract",
+      "guid": "ddaxsv4ezagz6t8sqvapf2jlqh7qhnczefe6iaagfff2kxpsps",
+      "explorerUrl": "https://etherscan.io/address/0x0bf6e5d289151e7ac34f8c746df65e38aa9bc0de",
+      "status": "✅ VERIFIED",
+      "constructorArgs": "none (upgradeable)"
+    },
+    "UserRegistry": {
+      "address": "0x88ffe6b6D0eD0C45278d65b83eB3CaeBbfcff0b5",
+      "type": "Standard Contract",
+      "guid": "rdhpqctpgkpexcnikse3aqmjabli2tjgapvzrrg2dutqtbide2",
+      "explorerUrl": "https://etherscan.io/address/0x88ffe6b6d0ed0c45278d65b83eb3caebbfcff0b5",
+      "status": "✅ VERIFIED",
+      "constructorArgs": "none"
+    }
+  },
+  "proxyContracts": {
+    "BucketVaultProxy": {
+      "address": "0x5eB859EC3E38B6F7713e3d7504D08Cb8D50f3825",
+      "implementation": "0x89c70d73C6F02DFf40Ee0c3b2Ccf5e9D4ED62871",
+      "explorerUrl": "https://sepolia.mantlescan.xyz/address/0x5eB859EC3E38B6F7713e3d7504D08Cb8D50f3825",
+      "status": "manual_verification_required",
+      "note": "Proxy contracts require manual verification on the Mantle Sepolia explorer"
+    },
+    "PayrollEngineProxy": {
+      "address": "0x918e725B7922129627C7FeFd4D64D6ee9b3dBFF4",
+      "implementation": "0x0bF6e5d289151E7Ac34f8c746df65e38aA9BC0De",
+      "explorerUrl": "https://sepolia.mantlescan.xyz/address/0x918e725B7922129627C7FeFd4D64D6ee9b3dBFF4",
+      "status": "manual_verification_required",
+      "note": "Proxy contracts require manual verification on the Mantle Sepolia explorer"
+    }
+  },
+  "notes": [
+    "✅ ALL IMPLEMENTATION CONTRACTS SUCCESSFULLY VERIFIED using Etherscan V2 API",
+    "Source code is now visible and readable on the blockchain explorer",
+    "Verification completed using the correct Mantle Sepolia chain ID (5003)",
+    "Proxy contracts still need manual verification through the Mantle Sepolia explorer interface"
+  ]
+}

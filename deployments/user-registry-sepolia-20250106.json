@@ -1,0 +1,34 @@
+{
+  "network": "sepolia",
+  "chainId": 5003,
+  "timestamp": "2025-01-06T15:30:00Z",
+  "contracts": {
+    "UserRegistryUpgradeable": {
+      "implementation": "0x2F9F07824D6A2e5be0D4a527B15E4457CD6123C7",
+      "proxy": "0x28d4C8100F199BDa17c62948790aFDBaa8e33C0A",
+      "verified": true,
+      "version": 1
+    }
+  },
+  "explorer": {
+    "implementation": "https://sepolia.mantlescan.xyz/address/0x2F9F07824D6A2e5be0D4a527B15E4457CD6123C7",
+    "proxy": "https://sepolia.mantlescan.xyz/address/0x28d4C8100F199BDa17c62948790aFDBaa8e33C0A"
+  },
+  "deployer": "0x6a62e5bA998874A5c8A5B3b3A1add5c9E3A31a4a",
+  "features": [
+    "UUPS Upgradeable",
+    "Message signature verification",
+    "Batch user migration",
+    "Event-based registration tracking",
+    "Owner-only upgrade authorization"
+  ],
+  "gasUsed": {
+    "implementation": "4721063523",
+    "proxy": "605845851",
+    "total": "5326909374"
+  },
+  "transactionHashes": {
+    "implementation": "0x6a0ef9a8f4885b712cd62ea73d791ea609e84bb65ba5aaa8e3ca9fd49f8a3399",
+    "proxy": "0x992da54560c5666106127f20f5bca23117b3557f05edcd8ae4a6fb8a336162c4"
+  }
+}
