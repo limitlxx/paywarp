@@ -6,8 +6,8 @@ import BucketVaultABI from './abis/BucketVault.json'
 import PayrollEngineABI from './abis/PayrollEngine.json'
 
 // Contract ABI definitions
-export const BUCKET_VAULT_ABI = BucketVaultABI as const
-export const PAYROLL_ENGINE_ABI = PayrollEngineABI as const
+export const BUCKET_VAULT_ABI = BucketVaultABI
+export const PAYROLL_ENGINE_ABI = PayrollEngineABI
 
 // Standard ERC20 ABI for token contracts
 export const ERC20_ABI = [

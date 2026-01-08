@@ -2,7 +2,7 @@ import React from 'react'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { OnboardingFlow } from '@/components/onboarding-flow'
-import { useWallet } from '@/hooks/use-wallet'
+import { useWallet } from '@/hooks/use-wallet.tsx'
 import { useWrappedReports } from '@/hooks/use-wrapped-reports'
 import { useRouter } from 'next/navigation'
 

@@ -53,9 +53,12 @@ export function generateRegistrationMessage(address: string): string {
 
 /**
  * Create message hash for registration
+ * This creates the hash that will be signed and verified by the contract
  */
 export function createMessageHash(message: string): string {
-  return ethers.keccak256(ethers.toUtf8Bytes(message));
+  const bytes = ethers.toUtf8Bytes(message);
+  const hash = ethers.keccak256(bytes);
+  return hash;
 }
 
 /**
@@ -78,13 +81,12 @@ export async function signRegistrationMessage(
  * Verify signature matches the expected signer
  */
 export function verifyRegistrationSignature(
-  messageHash: string,
+  messageHash: string,  // Changed: Verify against hash, not original message
   signature: string,
   expectedSigner: string
 ): boolean {
   try {
-    const ethSignedMessageHash = ethers.hashMessage(ethers.getBytes(messageHash));
-    const recoveredSigner = ethers.recoverAddress(ethSignedMessageHash, signature);
+    const recoveredSigner = ethers.verifyMessage(ethers.getBytes(messageHash), signature);
     return recoveredSigner.toLowerCase() === expectedSigner.toLowerCase();
   } catch (error) {
     console.error('Signature verification failed:', error);
@@ -139,7 +141,7 @@ export function useUserRegistration() {
     enabled: !!address && !!contractAddress,
   });
 
-  // Listen for registration failure events
+  // Listen for registration failure events (removed duplicate)
   useWatchContractEvent({
     address: contractAddress,
     abi: UserRegistryABI as any,
@@ -156,28 +158,12 @@ export function useUserRegistration() {
     enabled: !!address && !!contractAddress,
   });
 
-  // Listen for registration failure events
-  useWatchContractEvent({
-    address: contractAddress,
-    abi: UserRegistryABI as any,
-    eventName: 'RegistrationFailed',
-    onLogs(logs) {
-      logs.forEach((log: any) => {
-        if (log.args?.user?.toLowerCase() === address?.toLowerCase()) {
-          console.log('User registration failed:', log.args?.reason);
-          setRegistrationFailureReason(log.args?.reason as string);
-        }
-      });
-    },
-    enabled: !!address && !!contractAddress,
-  });
-
   // Clear registration failure reason when address changes
   useEffect(() => {
     setRegistrationFailureReason(null);
   }, [address]);
 
-  // Check if user is registered
+  // Check if user is registered (with fallback for undeployed contracts)
   const { data: isRegistered, refetch: refetchRegistrationStatus } = useReadContract({
     address: contractAddress,
     abi: UserRegistryABI as any,
@@ -188,6 +174,9 @@ export function useUserRegistration() {
       refetchInterval: 10000, // Refetch every 10 seconds
     },
   });
+
+  // Fallback: if contract is not deployed, treat as not registered
+  const effectiveIsRegistered = contractAddress ? isRegistered : false;
 
   // Get total users
   const { data: totalUsers, refetch: refetchTotalUsers } = useReadContract({
@@ -228,8 +217,11 @@ export function useUserRegistration() {
     setRegistrationFailureReason(null);
   };
 
-  // Register user function
-  const registerUser = async (): Promise<{ success: boolean; hash?: string; error?: string }> => {
+  // Register user function - UPDATED: Accept params directly, no state dependency
+  const registerUser = async (
+    signature: string,
+    messageHash: string
+  ): Promise<{ success: boolean; hash?: string; error?: string }> => {
     if (!address) {
       return { success: false, error: 'No wallet connected' };
     }
@@ -238,7 +230,7 @@ export function useUserRegistration() {
       return { success: false, error: 'UserRegistry contract not deployed on this network' };
     }
 
-    if (!pendingSignature || !pendingMessageHash) {
+    if (!signature || !messageHash) {
       return { success: false, error: 'No signature available' };
     }
 
@@ -250,19 +242,21 @@ export function useUserRegistration() {
         address: contractAddress,
         abi: UserRegistryABI as any,
         functionName: 'registerUser',
-        args: [pendingMessageHash as `0x${string}`, pendingSignature as `0x${string}`],
+        args: [messageHash as `0x${string}`, signature as `0x${string}`],
       });
 
-      return { success: true, hash: hash };
+      // Don't return hash here - it's async. Just signal success to trigger effects.
+      // The isConfirmed effect will handle final success.
+      return { success: true };
     } catch (err) {
       console.error('Registration failed:', err);
       return { success: false, error: err instanceof Error ? err.message : 'Unknown error' };
     }
-  };
+  }; 
 
   return {
     // State
-    isRegistered: !!isRegistered,
+    isRegistered: effectiveIsRegistered, // Use fallback value
     totalUsers: totalUsers ? Number(totalUsers) : 0,
     registrationDate: registrationDate ? new Date(Number(registrationDate) * 1000) : null,
     registrationFailureReason,

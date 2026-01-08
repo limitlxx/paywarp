@@ -37,6 +37,7 @@ import { SavingsGoalsManager } from "@/components/savings-goals-manager"
 import { SavingsGoalOverview } from "@/components/savings-goal-overview"
 import { DepositModal } from "@/components/modals/deposit-modal"
 import { WithdrawModal } from "@/components/modals/withdraw-modal"
+import { NetworkGuard } from "@/components/network-guard"
 import type { BucketType } from "@/types/bucket"
 
 const bucketData = {
@@ -105,7 +106,8 @@ export default function BucketDetails() {
   if (!bucket) return null
 
   return (
-    <div className="min-h-screen gradient-bg pb-24">
+    <NetworkGuard>
+      <div className="min-h-screen gradient-bg pb-24">
       <SimpleHeader />
 
       <main className="p-4 sm:p-6 lg:p-8">
@@ -567,5 +569,6 @@ export default function BucketDetails() {
         bucketName={bucket.name}
       />
     </div>
+  </NetworkGuard>
   )
 }

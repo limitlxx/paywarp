@@ -11,7 +11,9 @@ import { Button } from "@/components/ui/button"
 import { RadarScanner } from "@/components/radar-scanner"
 import { CommunityStats, UserRegistration } from "@/components/user-registration"
 import WrappedReportViewer from "@/components/wrapped-report-viewer"
-import { X, ArrowRight, SkipForward } from "lucide-react"
+import { X, ArrowRight, SkipForward, Network } from "lucide-react" // Added Network icon
+import { useSwitchChain, useChainId } from "wagmi" // NEW: Import Wagmi hooks for switching
+import { mantleMainnet, mantleSepolia } from "@/lib/networks" // NEW: Import your chain defs (adjust path if needed)
 
 // Preference storage utilities
 const WRAPPED_PREFERENCE_KEY = 'paywarp-show-wrapped-onboarding'
@@ -39,15 +41,17 @@ const setWrappedViewed = (address: string): void => {
   localStorage.setItem(`${WRAPPED_VIEWED_KEY}-${address}`, 'true')
 }
 
+
+
 export function OnboardingFlow() {
-  const { isConnected, connect, address, isHistoryLoading, syncHistory } = useWallet()
+  const { isConnected, connect, address, isHistoryLoading, syncHistory, transactions } = useWallet()
   const { hasActivity, isLoading: isWrappedLoading, reports, currentReport, generateReports } = useWrappedReports()
   const { isRegistered, refetchRegistrationStatus } = useUserRegistration()
-  const [step, setStep] = useState<"landing" | "registration" | "syncing" | "wrapped" | "warp">("landing")
+  const [step, setStep] = useState<"landing" | "registration" | "syncing" | "wrapped" | "dashboard">("landing")
   const [logs, setLogs] = useState<string[]>([])
   const [showWrappedViewer, setShowWrappedViewer] = useState(false)
   const [syncComplete, setSyncComplete] = useState(false)
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [justRegistered, setJustRegistered] = useState(false) // Track if user just completed registration
   const router = useRouter()
 
   // Check if user should see wrapped display
@@ -60,92 +64,147 @@ export function OnboardingFlow() {
     return preference && !hasViewed
   }, [address, hasActivity])
 
-  // Check authentication status when wallet connects
+  // Check registration status when wallet connects
   useEffect(() => {
     if (isConnected && address) {
-      // Refetch registration status to get latest data
       refetchRegistrationStatus()
     }
   }, [isConnected, address, refetchRegistrationStatus])
 
-  // Handle wallet connection - check registration status
+  // Handle wallet connection - check registration status with timeout
   useEffect(() => {
     if (isConnected && step === "landing") {
-      if (isRegistered) {
-        // User is already registered, mark as authenticated and start syncing
-        setIsAuthenticated(true)
-        setStep("syncing")
-      } else {
-        // User needs to register
+      // Add debugging
+      console.log("Wallet connected, checking registration status:", {
+        isConnected,
+        step,
+        isRegistered,
+        address
+      })
+      
+      // Set a timeout to prevent infinite loading
+      const registrationTimeout = setTimeout(() => {
+        if (isRegistered === undefined) {
+          console.log("Registration check timed out, assuming user needs to register")
+          setStep("registration")
+        }
+      }, 5000) // 5 second timeout
+      
+      // Wait for registration status to be determined (not undefined)
+      if (isRegistered === true) {
+        // User is already registered, skip directly to dashboard
+        console.log("User already registered, redirecting to dashboard")
+        clearTimeout(registrationTimeout)
+        router.push("/dashboard")
+      } else if (isRegistered === false) {
+        // User needs to register first
+        console.log("User not registered, showing registration")
+        clearTimeout(registrationTimeout)
         setStep("registration")
       }
+      // If isRegistered is undefined, wait for it to load (with timeout)
+      
+      return () => clearTimeout(registrationTimeout)
     }
-  }, [isConnected, step, isRegistered])
+  }, [isConnected, step, isRegistered, router, address])
 
-  // Handle successful registration - move to syncing
+  // Handle successful registration - move to syncing for first-time users only
   const handleRegistrationComplete = useCallback(() => {
-    setIsAuthenticated(true)
+    console.log("Registration completed, moving to syncing step")
+    setJustRegistered(true) // Mark that user just registered
     setStep("syncing")
   }, [])
 
-  // Handle sync process - only start when authenticated
+  // Handle sync process - only for newly registered users
   useEffect(() => {
-    if (step === "syncing" && isAuthenticated && address) {
+    if (step === "syncing" && address) {
       setLogs([])
       setSyncComplete(false)
       
       const logSequence = [
-        "> Accessing blockchain data...",
-        "> Verifying registration status...",
-        "> Analyzing wallet activity...",
-        "> Syncing with Mantle L2...",
-        "> Generating historical reports...",
-        "> Preparing dashboard...",
+        "> Connecting to Mantle L2...",
+        "> Scanning recent wallet activity...",
+        "> Syncing last 100 blocks...",
+        "> Generating activity reports...",
+        "> Preparing your wrapped experience...",
       ]
 
-      // Start the actual data sync
-      syncHistory()
+      // Start the actual data sync with limited scope for UX
+      const startSync = async () => {
+        try {
+          console.log("Starting initial sync for new user")
+          await syncHistory() // Use the simplified sync method
+          
+          console.log(`Initial sync completed: ${transactions.length} transactions found`)
+          
+          // Mark sync as complete after actual sync finishes
+          setSyncComplete(true)
+          
+        } catch (error) {
+          console.error('Initial sync failed:', error)
+          // Continue anyway - user can sync more later
+          setSyncComplete(true) // Still mark as complete to proceed
+        }
+      }
 
+      // Show logs with timing, but don't tie completion to timer
       logSequence.forEach((log, i) => {
         setTimeout(() => {
           setLogs((prev) => [...prev, log])
-          if (i === logSequence.length - 1) {
-            // Wait a bit more for sync to complete
-            setTimeout(() => {
-              setSyncComplete(true)
-            }, 1500)
-          }
-        }, i * 800)
+        }, i * 800) // Faster timing since we're not waiting for this to complete
       })
-    }
-  }, [step, isAuthenticated, address, syncHistory])
 
-  // Handle post-sync navigation - wait for all data to load
+      // Start sync after a short delay to let logs show
+      setTimeout(() => {
+        startSync()
+      }, logSequence.length * 800 + 500) // Start sync after logs are shown
+    }
+  }, [step, address, syncHistory, transactions])
+
+  // Handle post-sync navigation - redirect new users to wrapped page
   useEffect(() => {
-    if (syncComplete && !isHistoryLoading && !isWrappedLoading && isAuthenticated) {
+    if (syncComplete && !isHistoryLoading && !isWrappedLoading) {
+      console.log(`Post-sync navigation check:`, {
+        syncComplete,
+        isHistoryLoading,
+        isWrappedLoading,
+        justRegistered,
+        hasActivity,
+        transactionCount: transactions.length
+      })
+      
       // Generate wrapped reports after sync is complete
       generateReports()
       
       // Add a delay to ensure all data is loaded
       const navigationTimer = setTimeout(() => {
-        if (shouldShowWrapped()) {
+        // For newly registered users, check if they have activity
+        if (justRegistered) {
+          if (hasActivity && transactions.length > 0) {
+            console.log("New user with activity - redirecting to wrapped page")
+            router.push("/wrapped")
+          } else {
+            console.log("New user with no activity - going to dashboard")
+            setStep("dashboard")
+          }
+        } else if (shouldShowWrapped()) {
           setStep("wrapped")
         } else {
-          setStep("warp")
+          setStep("dashboard")
         }
       }, 1000)
       
       return () => clearTimeout(navigationTimer)
     }
-  }, [syncComplete, isHistoryLoading, isWrappedLoading, shouldShowWrapped, isAuthenticated, generateReports])
+  }, [syncComplete, isHistoryLoading, isWrappedLoading, shouldShowWrapped, generateReports, justRegistered, hasActivity, router, transactions.length])
 
   // Handle final navigation to dashboard
   useEffect(() => {
-    if (step === "warp") {
-      const warpTimer = setTimeout(() => {
+    if (step === "dashboard") {
+      const dashboardTimer = setTimeout(() => {
         router.push("/dashboard")
-      }, 2000)
-      return () => clearTimeout(warpTimer)
+      }, 1000)
+      return () => clearTimeout(dashboardTimer)
     }
   }, [step, router])
 
@@ -154,7 +213,7 @@ export function OnboardingFlow() {
     if (address) {
       setWrappedViewed(address)
     }
-    setStep("warp")
+    setStep("dashboard")
   }, [address])
 
   // Handle skip wrapped
@@ -163,13 +222,46 @@ export function OnboardingFlow() {
       setWrappedViewed(address)
       setWrappedPreference(false) // Remember user preference
     }
-    setStep("warp")
+    setStep("dashboard")
   }, [address])
 
   // Handle wrapped viewer toggle
   const toggleWrappedViewer = useCallback(() => {
     setShowWrappedViewer(!showWrappedViewer)
   }, [showWrappedViewer])
+
+  // NEW: Wagmi hooks for chain switching
+  const chainId = useChainId()
+  const { switchChain, isPending: isSwitching, error: switchError } = useSwitchChain()
+
+  // NEW: Determine target chain for toggle (Mantle Mainnet <-> Sepolia)
+  const getTargetChainId = useCallback(() => {
+    if (chainId === mantleMainnet.id) return mantleSepolia.id
+    if (chainId === mantleSepolia.id) return mantleMainnet.id
+    // Default to Mainnet if on unsupported chain
+    return mantleMainnet.id
+  }, [chainId])
+
+  // NEW: Handle network switch
+  const handleNetworkSwitch = useCallback(async () => {
+    const targetId = getTargetChainId()
+    try {
+      await switchChain({ chainId: targetId })
+      // Optional: Toast success or refetch data after switch
+      // toast.success(`Switched to ${targetId === mantleMainnet.id ? 'Mantle Mainnet' : 'Mantle Sepolia'}`)
+    } catch (err) {
+      // Handle user rejection or errors
+      // toast.error('Network switch failed. Please try again.')
+      console.error('Network switch error:', err)
+    }
+  }, [switchChain, getTargetChainId])
+
+  // NEW: Get current chain name for display
+  const getCurrentChainName = useCallback(() => {
+    if (chainId === mantleMainnet.id) return 'Mantle Mainnet'
+    if (chainId === mantleSepolia.id) return 'Mantle Sepolia'
+    return 'Unsupported Network'
+  }, [chainId])
 
   const onboardingContent = (
     <div className="relative min-h-screen w-full flex flex-col items-center justify-center bg-black overflow-hidden grid-background">
@@ -185,10 +277,19 @@ export function OnboardingFlow() {
             <h1 className="text-8xl font-bold mb-4 tracking-tighter bg-gradient-to-b from-white to-zinc-400 bg-clip-text text-transparent">
               PayWarp
             </h1>
-            <p className="text-xl text-zinc-400 mb-10 max-w-md mx-auto leading-relaxed text-balance">
-              Get deep insight on your Mantle transactions. <br />
-              Unwrap your blockchain story.
-            </p>
+            {/* <p className="text-xl text-zinc-400 mb-10 max-w-md mx-auto leading-relaxed text-balance">
+              Budget, Save, Earn.  
+            </p> */}
+
+            <div className="mb-4 flex items-center justify-center gap-3 text-zinc-400 text-sm font-medium">
+              <span className="w-1 h-1 bg-[#5E4DEF] rounded-full" />
+              Budget
+              <span className="w-1 h-1 bg-[#E01EAD] rounded-full" />
+              Save
+              <span className="w-1 h-1 bg-[#5E4EFF] rounded-full" />
+              Earn
+              <span className="w-1 h-1 bg-[#E01EAD] rounded-full" />
+            </div>
 
             <div className="relative glass-card p-2 rounded-[32px] border border-white/5 bg-white/[0.02] backdrop-blur-3xl shadow-2xl w-full max-w-md">
               <div className="p-6 space-y-4">
@@ -198,22 +299,44 @@ export function OnboardingFlow() {
                     await connect()
                   }}
                   className="w-full bg-gradient-to-r from-[#4A3AFF] to-[#E01EAD] hover:opacity-90 text-white h-14 rounded-2xl text-lg font-semibold transition-all hover:scale-[1.01] active:scale-[0.99] shadow-[0_8px_32px_rgba(74,58,255,0.25)]"
+                  disabled={isSwitching} // NEW: Disable during switch
                 >
-                  Open App →
+                  {isSwitching ? 'Switching Network...' : 'Open App →'}
                 </Button>
                 
-                {/* Community Stats */}
+                {/* NEW: Network Switch Toggle - Only show if connected */}
+                {!isConnected && (
+                  <Button
+                    variant="outline"
+                    onClick={handleNetworkSwitch}
+                    disabled={isSwitching}
+                    className="w-full border-white/30 text-white hover:bg-white/5 h-10 rounded-xl text-sm flex items-center justify-center gap-2"
+                  >
+                    <Network className="h-4 w-4" />
+                    {isSwitching ? (
+                      <span>Switching...</span>
+                    ) : (
+                      <>
+                        Switch to {getTargetChainId() === mantleMainnet.id ? 'Mainnet' : 'Sepolia'}
+                        <span className="text-xs ml-1">({getCurrentChainName()})</span>
+                      </>
+                    )}
+                  </Button>
+                )}
+
+                {/* NEW: Error display for switch failures */}
+                {switchError && (
+                  <div className="text-xs text-red-400 text-center">
+                    {switchError.message || 'Network switch failed'}
+                  </div>
+                )}
+                
+                {/* Community Stats - Always show */}
                 <div className="flex justify-center pt-2">
                   <CommunityStats />
                 </div>
               </div>
-            </div>
-
-            <div className="mt-12 flex items-center justify-center gap-3 text-zinc-400 text-sm font-medium">
-              <span className="w-1 h-1 bg-[#5E4DFF] rounded-full" />
-              Mantle L2
-              <span className="w-1 h-1 bg-[#E01EAD] rounded-full" />
-            </div>
+            </div>           
 
             <div className="mt-10 flex flex-col items-center gap-8">
               <div className="flex items-center gap-2 text-sm text-zinc-500">
@@ -241,6 +364,7 @@ export function OnboardingFlow() {
             exit={{ opacity: 0, scale: 0.9 }}
             className="z-10 flex flex-col items-center justify-center w-full max-w-md"
           >
+            {/* Show registration form directly - handleRegistrationComplete will move to syncing */}
             <UserRegistration
               onRegistrationComplete={handleRegistrationComplete}
               showCommunityStats={true}
@@ -259,7 +383,7 @@ export function OnboardingFlow() {
             <RadarScanner />
             <div className="mt-8 text-center">
               <h2 className="text-emerald-400 font-mono text-2xl tracking-[0.2em] font-bold text-glow-neon uppercase">
-                Initialising Sync
+                Syncing Your Data
               </h2>
               <div className="flex gap-1 mt-2 justify-center">
                 {[...Array(3)].map((_, i) => (
@@ -270,6 +394,22 @@ export function OnboardingFlow() {
                     className="w-2 h-2 bg-emerald-400 rounded-full blur-[1px]"
                   />
                 ))}
+              </div>
+              
+              {/* Progress Information */}
+              <div className="mt-6 text-center">
+                <div className="text-emerald-300 text-sm font-mono space-y-1">
+                  <p>Synced recent blocks</p>
+                  {transactions.length > 0 && (
+                    <p>Found {transactions.length} transactions</p>
+                  )}
+                  {transactions.length === 0 && syncComplete && (
+                    <p className="text-emerald-400">No previous activity found - you're all set!</p>
+                  )}
+                  <p className="text-emerald-500 text-xs mt-2">
+                    {syncComplete ? 'Sync complete • Proceeding to dashboard...' : 'Initial sync in progress • More history available in dashboard'}
+                  </p>
+                </div>
               </div>
             </div>
 
@@ -353,15 +493,15 @@ export function OnboardingFlow() {
           </motion.div>
         )}
 
-        {step === "warp" && (
+        {/* {step === "dashboard" && (
           <motion.div
-            key="warp"
+            key="dashboard"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             className="z-50 fixed inset-0 bg-black pointer-events-none"
           >
             <div className="absolute inset-0 overflow-hidden">
-              {Array.from({ length: 50 }).map((_, i) => (
+              {Array.from({ length: 30 }).map((_, i) => (
                 <motion.div
                   key={i}
                   initial={{
@@ -373,30 +513,30 @@ export function OnboardingFlow() {
                   animate={{
                     x: `${Math.random() * 100}%`,
                     y: `${Math.random() * 100}%`,
-                    scale: 2,
+                    scale: 1.5,
                     opacity: 0,
                   }}
                   transition={{
-                    duration: 1.5,
-                    ease: "easeIn",
+                    duration: 1.2,
+                    ease: "easeOut",
                     repeat: Number.POSITIVE_INFINITY,
-                    delay: Math.random() * 0.5,
+                    delay: Math.random() * 0.3,
                   }}
-                  className="absolute w-1 h-1 bg-violet-500 rounded-full blur-[1px]"
+                  className="absolute w-1 h-1 bg-purple-500 rounded-full blur-[1px]"
                 />
               ))}
             </div>
             <div className="absolute inset-0 flex items-center justify-center">
               <motion.h2
                 initial={{ scale: 0.5, opacity: 0 }}
-                animate={{ scale: 1.5, opacity: 1 }}
-                className="text-4xl font-bold tracking-[1em] text-white"
+                animate={{ scale: 1.2, opacity: 1 }}
+                className="text-3xl font-bold tracking-[0.5em] text-white"
               >
-                PAYWARP
+                WELCOME
               </motion.h2>
             </div>
           </motion.div>
-        )}
+        )} */}
       </AnimatePresence>
 
       {/* Background Ambience */}

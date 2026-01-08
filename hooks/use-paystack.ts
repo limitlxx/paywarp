@@ -6,7 +6,7 @@
 import { useState, useCallback, useEffect } from 'react'
 import { useAccount } from 'wagmi'
 import { getPaystackService, type PaymentSession, type DepositRecord } from '@/lib/paystack-service'
-import { useBlockchainBuckets } from './use-blockchain-buckets'
+import { useBlockchainBuckets } from './use-blockchain-buckets-improved'
 import { toast } from './use-toast'
 
 interface UsePaystackReturn {
@@ -142,12 +142,10 @@ export function usePaystack(): UsePaystackReturn {
     }
 
     try {
-      // Convert crypto amount to wei (assuming USDC has 6 decimals)
-      const amountInWei = BigInt(Math.floor(depositRecord.cryptoAmount * 1e6))
+      // Use the depositAndSplit function which expects a number (USDC amount)
+      const hash = await depositAndSplit(depositRecord.cryptoAmount)
       
-      const result = await depositAndSplit(amountInWei)
-      
-      if (result.success) {
+      if (hash) {
         toast({
           title: 'Auto-Split Completed',
           description: `${depositRecord.cryptoAmount} USDC has been split across your buckets`,
@@ -155,11 +153,11 @@ export function usePaystack(): UsePaystackReturn {
         
         // Update deposit record to mark auto-split as triggered
         // In production, this would update the database
-        console.log(`Auto-split triggered for deposit ${depositRecord.id}`)
+        console.log(`Auto-split triggered for deposit ${depositRecord.id}, tx hash: ${hash}`)
         
         return true
       } else {
-        throw new Error(result.error || 'Auto-split failed')
+        throw new Error('Auto-split transaction failed')
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Auto-split failed'
@@ -220,7 +218,7 @@ export function usePaystack(): UsePaystackReturn {
   useEffect(() => {
     if (!currentSession || currentSession.status !== 'pending') return
 
-    const timeUntilExpiry = currentSession.expiresAt.getTime() - Date.now()
+    const timeUntilExpiry = currentSession.expiresAt - Date.now()
     
     if (timeUntilExpiry <= 0) {
       setCurrentSession(prev => prev ? { ...prev, status: 'failed' } : null)

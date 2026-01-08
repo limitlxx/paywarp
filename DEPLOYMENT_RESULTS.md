@@ -128,3 +128,39 @@ The deployment was successful and all contracts are ready for testing and integr
 - New UserRegistry: `0x28d4C8100F199BDa17c62948790aFDBaa8e33C0A`
 - Frontend updated to use new proxy address
 - Existing users can be migrated using `batchRegisterUsers` function
+
+## UserRegistry Upgradeable Deployment - Sepolia (January 6, 2025)
+
+- **Implementation**: [0x2F9F07824D6A2e5be0D4a527B15E4457CD6123C7](https://sepolia.mantlescan.xyz/address/0x2F9F07824D6A2e5be0D4a527B15E4457CD6123C7) ✅ **Verified**
+- **Proxy**: [0x28d4C8100F199BDa17c62948790aFDBaa8e33C0A](https://sepolia.mantlescan.xyz/address/0x28d4C8100F199BDa17c62948790aFDBaa8e33C0A) ✅ **Verified**
+- **Network**: Sepolia (Chain ID: 5003)
+- **Status**: ✅ Deployed and Verified
+- **Version**: 1
+- **Upgrade Pattern**: UUPS (Universal Upgradeable Proxy Standard)
+
+### Features:
+- ✅ Message signature verification for wallet ownership proof
+- ✅ UUPS upgradeable pattern with owner-only authorization
+- ✅ Batch user migration functionality
+- ✅ Event-based registration tracking
+- ✅ Reentrancy protection
+- ✅ Gas-optimized implementation
+
+### Migration Notes:
+- **Old UserRegistry**: `0x88ffe6b6D0eD0C45278d65b83eB3CaeBbfcff0b5`
+- **New UserRegistry**: `0x28d4C8100F199BDa17c62948790aFDBaa8e33C0A`
+- Frontend updated to use new proxy address
+- Existing users can be migrated using `batchRegisterUsers` function
+
+### Verification Status:
+- **Implementation Contract**: ✅ Verified on Etherscan
+- **Proxy Contract**: ✅ Verified on Etherscan  
+- **Source Code**: Available and verified
+- **ABI**: Generated and updated in frontend
+
+### Contract Functions:
+- `registerUser(bytes32 messageHash, bytes signature)` - Register new user
+- `isUserRegistered(address user)` - Check registration status
+- `getTotalUsers()` - Get total registered users
+- `batchRegisterUsers()` - Migrate users (owner only)
+- `upgradeToAndCall()` - Upgrade contract (owner only)

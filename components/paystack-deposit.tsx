@@ -26,7 +26,7 @@ interface PaystackDepositProps {
 
 export function PaystackDeposit({ onSuccess, onError }: PaystackDepositProps) {
   const { address } = useAccount()
-  const { convertAmount, formatCurrency, currentCurrency } = useCurrency()
+  const { convertAmount, formatAmount } = useCurrency()
   const {
     currentSession,
     isInitializing,
@@ -42,7 +42,6 @@ export function PaystackDeposit({ onSuccess, onError }: PaystackDepositProps) {
   const [currency, setCurrency] = useState<'NGN' | 'USD'>('USD')
   const [email, setEmail] = useState('')
   const [isProcessing, setIsProcessing] = useState(false)
-  const [showPaymentWindow, setShowPaymentWindow] = useState(false)
 
   /**
    * Handle payment initialization
@@ -60,9 +59,16 @@ export function PaystackDeposit({ onSuccess, onError }: PaystackDepositProps) {
     const session = await initializePayment(numericAmount, currency, email)
     
     if (session) {
-      setShowPaymentWindow(true)
-      // Open Paystack payment page in new window
-      window.open(session.paystackUrl, 'paystack-payment', 'width=500,height=700')
+      // Store current form data in localStorage for restoration after callback
+      localStorage.setItem('paystack-form-data', JSON.stringify({
+        amount,
+        currency,
+        email,
+        userAddress: address
+      }))
+      
+      // Redirect to Paystack payment page in same tab for better UX
+      window.location.href = session.paystackUrl
     }
   }
 
@@ -91,7 +97,6 @@ export function PaystackDeposit({ onSuccess, onError }: PaystackDepositProps) {
             onSuccess?.(depositRecord.cryptoAmount)
             setAmount('')
             setEmail('')
-            setShowPaymentWindow(false)
           }
         }
       }
@@ -127,21 +132,24 @@ export function PaystackDeposit({ onSuccess, onError }: PaystackDepositProps) {
   const equivalentAmounts = getEquivalentAmounts()
 
   /**
-   * Listen for payment completion messages from popup window
+   * Restore form data after returning from payment
    */
   useEffect(() => {
-    const handleMessage = (event: MessageEvent) => {
-      if (event.origin !== 'https://checkout.paystack.com') return
-      
-      if (event.data.type === 'payment_complete') {
-        setShowPaymentWindow(false)
-        handleVerifyPayment()
+    const savedFormData = localStorage.getItem('paystack-form-data')
+    if (savedFormData) {
+      try {
+        const formData = JSON.parse(savedFormData)
+        if (formData.userAddress === address) {
+          setAmount(formData.amount)
+          setCurrency(formData.currency)
+          setEmail(formData.email)
+        }
+        localStorage.removeItem('paystack-form-data')
+      } catch (error) {
+        console.error('Error restoring form data:', error)
       }
     }
-
-    window.addEventListener('message', handleMessage)
-    return () => window.removeEventListener('message', handleMessage)
-  }, [currentSession])
+  }, [address])
 
   if (!address) {
     return (
@@ -222,10 +230,10 @@ export function PaystackDeposit({ onSuccess, onError }: PaystackDepositProps) {
             <div className="p-4 bg-muted/50 rounded-lg space-y-2">
               <h4 className="font-medium text-sm">Conversion Preview</h4>
               <div className="grid grid-cols-2 gap-2 text-sm">
-                <div>You pay: {formatCurrency(equivalentAmounts[currency.toLowerCase() as keyof typeof equivalentAmounts], currency)}</div>
+                <div>You pay: {formatAmount(equivalentAmounts[currency.toLowerCase() as keyof typeof equivalentAmounts], currency)}</div>
                 <div>You receive: {equivalentAmounts.usdc.toFixed(2)} USDC</div>
                 <div>USD equivalent: ${equivalentAmounts.usd.toFixed(2)}</div>
-                <div>MNT equivalent: {formatCurrency(equivalentAmounts.mnt, 'MNT')}</div>
+                <div>MNT equivalent: {formatAmount(equivalentAmounts.mnt, 'MNT')}</div>
               </div>
             </div>
           )}
@@ -276,7 +284,7 @@ export function PaystackDeposit({ onSuccess, onError }: PaystackDepositProps) {
               {currentSession.status === 'pending' && (
                 <div className="space-y-2">
                   <Button
-                    onClick={() => window.open(currentSession.paystackUrl, 'paystack-payment', 'width=500,height=700')}
+                    onClick={() => window.location.href = currentSession.paystackUrl}
                     variant="outline"
                     className="w-full"
                   >
@@ -339,7 +347,7 @@ export function PaystackDeposit({ onSuccess, onError }: PaystackDepositProps) {
                     <div className="text-right">
                       <p className="text-sm">{deposit.cryptoAmount.toFixed(2)} USDC</p>
                       <Badge variant={
-                        deposit.status === 'completed' ? 'default' :
+                        deposit.status === 'success' ? 'default' :
                         deposit.status === 'failed' ? 'destructive' :
                         'secondary'
                       } className="text-xs">

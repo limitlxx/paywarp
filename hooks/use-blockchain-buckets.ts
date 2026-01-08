@@ -142,15 +142,41 @@ export function useBlockchainBuckets() {
     },
   ]
 
+  // Rate limiting state
+  const [lastFetchTime, setLastFetchTime] = useState(0)
+  const MIN_FETCH_INTERVAL = 5000 // 5 seconds minimum between fetches
+
   // Fetch bucket balances from contract
   const fetchBucketBalances = useCallback(async () => {
-    if (!bucketVaultContract || !address || !isConnected) {
+    if (!address || !isConnected) {
+      console.log('Skipping bucket balance fetch: wallet not connected')
+      return
+    }
+
+    if (!bucketVaultContract) {
+      console.log('Skipping bucket balance fetch: contract not available for current network')
+      setError('Contracts not deployed on current network. Please switch to Sepolia testnet.')
+      return
+    }
+
+    // Rate limiting check
+    const now = Date.now()
+    if (now - lastFetchTime < MIN_FETCH_INTERVAL) {
+      console.log('Rate limiting: skipping fetch, too soon since last fetch')
+      return
+    }
+
+    // Don't fetch if we're already loading
+    if (isLoading) {
+      console.log('Skipping bucket balance fetch: already loading')
       return
     }
 
     try {
       setIsLoading(true)
       setError(null)
+
+      console.log('Fetching bucket balances for address:', address)
 
       const bucketPromises = defaultBuckets.map(async (bucketConfig) => {
         try {
@@ -200,13 +226,18 @@ export function useBlockchainBuckets() {
       console.error('Error fetching bucket balances:', err)
     } finally {
       setIsLoading(false)
+      setLastFetchTime(Date.now()) // Update last fetch time
     }
   }, [bucketVaultContract, address, isConnected])
 
   // Deposit and split funds
   const depositAndSplit = useCallback(async (amount: number) => {
-    if (!bucketVaultWriteContract || !address) {
-      throw new Error('Contract not available or wallet not connected')
+    if (!address) {
+      throw new Error('Wallet not connected')
+    }
+
+    if (!bucketVaultWriteContract) {
+      throw new Error('Contracts not deployed on current network. Please switch to Sepolia testnet.')
     }
 
     try {
@@ -267,8 +298,12 @@ export function useBlockchainBuckets() {
 
   // Transfer between buckets
   const transferBetweenBuckets = useCallback(async (fromId: BucketType, toId: BucketType, amount: number) => {
-    if (!bucketVaultWriteContract || !address) {
-      throw new Error('Contract not available or wallet not connected')
+    if (!address) {
+      throw new Error('Wallet not connected')
+    }
+
+    if (!bucketVaultWriteContract) {
+      throw new Error('Contracts not deployed on current network. Please switch to Sepolia testnet.')
     }
 
     try {
@@ -336,8 +371,12 @@ export function useBlockchainBuckets() {
 
   // Withdraw from bucket
   const withdrawFromBucket = useCallback(async (bucketId: BucketType, amount: number) => {
-    if (!bucketVaultWriteContract || !address) {
-      throw new Error('Contract not available or wallet not connected')
+    if (!address) {
+      throw new Error('Wallet not connected')
+    }
+
+    if (!bucketVaultWriteContract) {
+      throw new Error('Contracts not deployed on current network. Please switch to Sepolia testnet.')
     }
 
     try {
@@ -408,8 +447,12 @@ export function useBlockchainBuckets() {
 
   // Update split configuration
   const updateSplitConfig = useCallback(async (config: SplitConfig) => {
-    if (!bucketVaultWriteContract || !address) {
-      throw new Error('Contract not available or wallet not connected')
+    if (!address) {
+      throw new Error('Wallet not connected')
+    }
+
+    if (!bucketVaultWriteContract) {
+      throw new Error('Contracts not deployed on current network. Please switch to Sepolia testnet.')
     }
 
     try {
@@ -500,7 +543,7 @@ export function useBlockchainBuckets() {
       setSplitConfig(null)
       setError(null)
     }
-  }, [isConnected, address, bucketVaultContract, fetchBucketBalances])
+  }, [isConnected, address, bucketVaultContract]) // Removed fetchBucketBalances from dependencies
 
   // Clean up old pending transactions
   useEffect(() => {

@@ -16,6 +16,12 @@ import {
   type SessionConfigType,
   DEFAULT_SESSION_CONFIGS
 } from '@/lib/session-keys'
+import { 
+  sessionKeyStorage, 
+  createSessionKeyId, 
+  getSessionKeyLimits,
+  type StoredSessionKey 
+} from '@/lib/session-key-storage'
 
 export interface UseSessionKeysReturn {
   // Session key management
@@ -108,15 +114,31 @@ export function useSessionKeys(): UseSessionKeysReturn {
   }, [])
   
   const refreshSessionKeys = useCallback(() => {
-    if (!sessionManagerRef.current) return
+    if (!sessionManagerRef.current || !address) return
     
     try {
-      const keys = sessionManagerRef.current.getActiveSessionKeys()
+      // Get session keys from storage
+      const storedKeys = sessionKeyStorage.getUserSessionKeys(address, { isActive: true })
+      
+      // Convert to the format expected by the component
+      const keys = storedKeys.map(stored => ({
+        sessionId: stored.id,
+        state: {
+          id: stored.id,
+          isActive: stored.isActive,
+          expirationTime: new Date(stored.expiresAt),
+          allowedContracts: stored.allowedContracts,
+          transactionLimits: stored.transactionLimits,
+          usage: stored.usage,
+          type: stored.type
+        } as SessionKeyState
+      }))
+      
       setActiveSessionKeys(keys)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to refresh session keys')
     }
-  }, [])
+  }, [address])
   
   const createSessionKey = useCallback(async (config: Omit<SessionKeyConfig, 'createdAt'>): Promise<string> => {
     if (!sessionManagerRef.current) {
@@ -131,7 +153,28 @@ export function useSessionKeys(): UseSessionKeysReturn {
     setError(null)
     
     try {
+      // Create session key with manager
       const sessionId = sessionManagerRef.current.createSessionKey(config)
+      
+      // Store in persistent storage
+      const storedSessionKey: StoredSessionKey = {
+        id: sessionId,
+        address,
+        type: config.type || 'standard',
+        createdAt: Date.now(),
+        expiresAt: config.expirationTime.getTime(),
+        allowedContracts: config.allowedContracts,
+        transactionLimits: getSessionKeyLimits(config.type || 'standard'),
+        usage: {
+          transactionCount: 0,
+          totalValue: 0n,
+          lastUsed: 0,
+          dailyUsage: {}
+        },
+        isActive: true
+      }
+      
+      sessionKeyStorage.storeSessionKey(storedSessionKey)
       refreshSessionKeys()
       return sessionId
     } catch (err) {
@@ -168,10 +211,15 @@ export function useSessionKeys(): UseSessionKeysReturn {
     }
     
     try {
+      // Revoke in manager
       const success = sessionManagerRef.current.revokeSessionKey(sessionId, reason)
+      
+      // Deactivate in storage
       if (success) {
+        sessionKeyStorage.deactivateSessionKey(sessionId)
         refreshSessionKeys()
       }
+      
       return success
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to revoke session key')
@@ -223,6 +271,12 @@ export function useSessionKeys(): UseSessionKeysReturn {
       return { success: false, error: 'Automation is disabled' }
     }
     
+    // Check transaction eligibility in storage
+    const eligibility = sessionKeyStorage.canExecuteTransaction(sessionId, amount, contractAddress)
+    if (!eligibility.canExecute) {
+      return { success: false, error: eligibility.reason }
+    }
+    
     setIsExecutingTransaction(true)
     setError(null)
     
@@ -237,6 +291,8 @@ export function useSessionKeys(): UseSessionKeysReturn {
       )
       
       if (result.success) {
+        // Update usage in storage
+        sessionKeyStorage.updateSessionKeyUsage(sessionId, amount, contractAddress)
         refreshSessionKeys() // Refresh to update usage statistics
       } else {
         setError(result.error || 'Transaction failed')
@@ -275,16 +331,21 @@ export function useSessionKeys(): UseSessionKeysReturn {
   }, [])
   
   const cleanupExpiredSessions = useCallback((): number => {
-    if (!sessionManagerRef.current) {
-      return 0
+    if (!address) return 0
+    
+    // Cleanup from storage
+    const cleanedCount = sessionKeyStorage.cleanupExpiredKeys()
+    
+    // Also cleanup from manager if available
+    if (sessionManagerRef.current) {
+      sessionManagerRef.current.cleanupExpiredKeys()
     }
     
-    const cleanedCount = sessionManagerRef.current.cleanupExpiredKeys()
     if (cleanedCount > 0) {
       refreshSessionKeys()
     }
     return cleanedCount
-  }, [refreshSessionKeys])
+  }, [address, refreshSessionKeys])
   
   return {
     // Session key management

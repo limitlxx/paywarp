@@ -11,11 +11,12 @@ import { TransferModal } from "@/components/modals/transfer-modal"
 import { useState, useEffect, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { useOptimizedBlockchainBuckets } from "@/hooks/use-optimized-blockchain-buckets"
-import { useWallet } from "@/hooks/use-wallet"
+import { useWallet } from "@/hooks/use-wallet.tsx"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useMobileCapabilities, useMobileRenderOptimization, useMobilePerformanceMonitoring } from "@/lib/mobile-optimization"
 import { useLoadingManager } from "@/lib/loading-state-manager"
 import { useAnimationPerformanceMonitoring } from "@/lib/animation-optimizer"
+import { NetworkGuard } from "@/components/network-guard"
 
 export default function BucketsPage() {
   const [isDepositOpen, setIsDepositOpen] = useState(false)
@@ -154,7 +155,8 @@ export default function BucketsPage() {
 
   return (
     <AuthGuard>
-      <div className="min-h-screen gradient-bg pb-24">
+      <NetworkGuard>
+        <div className="min-h-screen gradient-bg pb-24">
         <SimpleHeader />
 
         <main className="p-4 sm:p-6 lg:p-8">
@@ -300,6 +302,7 @@ export default function BucketsPage() {
 
       <BottomNav />
     </div>
-  </AuthGuard>
+  </NetworkGuard>
+</AuthGuard>
   )
 }

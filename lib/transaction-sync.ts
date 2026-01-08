@@ -6,6 +6,7 @@ import BucketVaultABI from './abis/BucketVault.json'
 import PayrollEngineABI from './abis/PayrollEngine.json'
 import { getContractAddress } from './contracts'
 import { RPCProvider, withRPCFallback } from './rpc-provider'
+import { transactionCache, LocalStorageCache, TransactionCacheService, type SyncMetadata } from './transaction-cache'
 import type { NetworkType } from './types'
 
 // Enhanced transaction types for blockchain integration
@@ -62,6 +63,9 @@ export interface TransactionSyncOptions {
   maxBlocks?: number
   includePayroll?: boolean
   chunkSize?: number // New option to configure chunk size
+  forceSync?: boolean // Force sync even if cache is recent
+  useCache?: boolean // Whether to use cached data (default: true)
+  useAlchemy?: boolean // Whether to use Alchemy Transfer API (default: true)
 }
 
 export class TransactionSyncService {
@@ -71,23 +75,871 @@ export class TransactionSyncService {
   private networkType: NetworkType
   private bucketVaultAddress: string
   private payrollEngineAddress: string
+  private optimalChunkSize: bigint = BigInt(5) // Start with ultra-conservative chunk size
 
   constructor(chainId: number) {
     this.chainId = chainId
-    this.networkType = chainId === mantleMainnet.id ? 'mainnet' : 'sepolia'
+    this.networkType = chainId === mantleSepolia.id ? 'mainnet' : 'sepolia'
     this.rpcProvider = RPCProvider.getInstance(this.networkType)
     this.publicClient = this.rpcProvider.getPublicClient()
     
     // Get contract addresses based on network
     this.bucketVaultAddress = getContractAddress(this.networkType, 'bucketVault')
     this.payrollEngineAddress = getContractAddress(this.networkType, 'payrollEngine')
+    
+    // Detect optimal chunk size based on network
+    this.detectOptimalChunkSize()
+  }
+
+  /**
+   * Detect the optimal chunk size for the current RPC provider
+   */
+  private async detectOptimalChunkSize(): Promise<void> {
+    try {
+      // Test with a small range first
+      const currentBlock = await this.rpcProvider.executeRead(async (client: any) => {
+        return client.getBlockNumber()
+      })
+      
+      // Try progressively larger chunk sizes to find the limit (much more conservative)
+      const testSizes = [BigInt(5), BigInt(10), BigInt(20), BigInt(50)]
+      
+      for (const size of testSizes) {
+        try {
+          await this.rpcProvider.executeRead(async (client: any) => {
+            return client.getLogs({
+              address: this.bucketVaultAddress,
+              fromBlock: currentBlock - size,
+              toBlock: currentBlock - BigInt(1)
+            })
+          })
+          this.optimalChunkSize = size
+          console.log(`Optimal chunk size detected: ${size} blocks`)
+        } catch (error) {
+          console.log(`Chunk size ${size} failed, using previous successful size: ${this.optimalChunkSize}`)
+          break
+        }
+      }
+    } catch (error) {
+      console.warn('Could not detect optimal chunk size, using conservative default:', error)
+      this.optimalChunkSize = BigInt(5)
+    }
+  }
+
+  /**
+   * Check if user is registered (must be implemented by caller)
+   * This prevents RPC calls for unregistered users
+   */
+  private async checkUserRegistration(userAddress: string): Promise<boolean> {
+    // This will be checked by the hook before calling sync methods
+    // For now, we'll assume the caller has already verified registration
+    return true
+  }
+
+  /**
+   * Get cached transactions with optional fresh sync
+   */
+  async getCachedTransactions(
+    userAddress: string,
+    options: TransactionSyncOptions = {}
+  ): Promise<{ transactions: BlockchainTransaction[]; fromCache: boolean }> {
+    const useCache = options.useCache !== false
+    const forceSync = options.forceSync === true
+    const useAlchemy = options.useAlchemy !== false
+
+    // Try to get from cache first
+    if (useCache && !forceSync) {
+      try {
+        const cachedTxs = await transactionCache.getTransactions(userAddress, this.chainId)
+        
+        if (cachedTxs.length > 0) {
+          // Check if cache is recent (within last hour)
+          const hasRecentCache = await transactionCache.hasRecentCache(userAddress, this.chainId)
+          
+          if (hasRecentCache) {
+            console.log(`Using cached transactions: ${cachedTxs.length} transactions`)
+            const transactions = cachedTxs.map(cached => TransactionCacheService.fromCached(cached))
+            return { transactions, fromCache: true }
+          }
+        }
+        
+        // If no cache or old cache, but maxBlocks is 0, return empty (don't sync)
+        if (options.maxBlocks === 0) {
+          console.log('No cache available and sync disabled (maxBlocks=0)')
+          return { transactions: [], fromCache: false }
+        }
+      } catch (error) {
+        console.warn('Failed to load cached transactions:', error)
+        
+        // If cache fails and sync is disabled, return empty
+        if (options.maxBlocks === 0) {
+          return { transactions: [], fromCache: false }
+        }
+      }
+    }
+
+    // If no cache or forced sync, fetch fresh data (only if maxBlocks > 0)
+    if (options.maxBlocks === 0) {
+      console.log('Sync disabled (maxBlocks=0), returning empty transactions')
+      return { transactions: [], fromCache: false }
+    }
+
+    console.log('Fetching fresh transaction data...')
+    
+    // Try Alchemy first if enabled and API key is available
+    let transactions: BlockchainTransaction[] = []
+    if (useAlchemy && process.env.ALCHEMY_API_KEY && process.env.ALCHEMY_API_KEY !== 'your_alchemy_api_key_here') {
+      try {
+        console.log('🚀 Using Alchemy Transfer API for optimized fetching...')
+        transactions = await this.fetchUserTransactionsAlchemy(userAddress, options)
+        console.log(`✅ Alchemy API returned ${transactions.length} transactions`)
+      } catch (error) {
+        console.warn('Alchemy API failed, falling back to standard RPC:', error)
+        transactions = await this.syncHistoricalTransactions(userAddress, options)
+      }
+    } else {
+      // Fallback to standard RPC method
+      if (!process.env.ALCHEMY_API_KEY || process.env.ALCHEMY_API_KEY === 'your_alchemy_api_key_here') {
+        console.log('⚠️ Alchemy API key not configured, using standard RPC (slower)')
+      }
+      transactions = await this.syncHistoricalTransactions(userAddress, options)
+    }
+    
+    // Cache the results
+    if (useCache) {
+      try {
+        console.log(`💾 CACHING FRESH TRANSACTION DATA:`)
+        console.log(`   User: ${userAddress}`)
+        console.log(`   Chain: ${this.chainId}`)
+        console.log(`   Transactions to cache: ${transactions.length}`)
+        
+        await transactionCache.storeTransactions(transactions, userAddress, this.chainId)
+        
+        // Update sync metadata
+        const currentBlock = await this.rpcProvider.executeRead(async (client: any) => {
+          return client.getBlockNumber()
+        })
+        
+        const metadata: SyncMetadata = {
+          userAddress,
+          chainId: this.chainId,
+          lastSyncedBlock: currentBlock.toString(),
+          lastSyncedTimestamp: Date.now(),
+          totalTransactions: transactions.length,
+          lastUpdated: Date.now()
+        }
+        
+        await transactionCache.updateSyncMetadata(metadata)
+        console.log(`✅ Successfully cached ${transactions.length} transactions and updated sync metadata`)
+      } catch (error) {
+        console.warn('Failed to cache transactions:', error)
+      }
+    }
+
+    return { transactions, fromCache: false }
+  }
+
+  /**
+   * Fetch user transactions via Alchemy Transfer API (no block scanning)
+   * Filters for your contracts; paginates for full history
+   */
+  async fetchUserTransactionsAlchemy(
+    userAddress: string,
+    options: TransactionSyncOptions = {}
+  ): Promise<BlockchainTransaction[]> {
+    try {
+      const alchemyEndpoint = this.networkType === 'mainnet' 
+        ? `https://mantle-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`
+        : `https://mantle-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`
+
+      // Build request payload
+      const payload = {
+        id: 1,
+        jsonrpc: '2.0',
+        method: 'alchemy_getAssetTransfers',
+        params: [{
+          fromBlock: options.fromBlock ? `0x${options.fromBlock.toString(16)}` : '0x0',
+          toBlock: options.toBlock ? `0x${options.toBlock.toString(16)}` : 'latest',
+          fromAddress: userAddress,
+          toAddress: userAddress,
+          contractAddresses: [this.bucketVaultAddress, this.payrollEngineAddress],
+          category: ['external', 'internal', 'erc20', 'erc721', 'erc1155'],
+          withMetadata: true,
+          excludeZeroValue: false,
+          maxCount: '0x3e8', // 1000 transactions per call
+          order: 'asc'
+        }]
+      }
+
+      console.log(`🔍 Fetching transactions via Alchemy Transfer API...`)
+      console.log(`   Endpoint: ${alchemyEndpoint.replace(process.env.ALCHEMY_API_KEY!, '[API_KEY]')}`)
+      console.log(`   User: ${userAddress}`)
+      console.log(`   Contracts: [${this.bucketVaultAddress}, ${this.payrollEngineAddress}]`)
+
+      const response = await fetch(alchemyEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify(payload)
+      })
+
+      if (!response.ok) {
+        throw new Error(`Alchemy API error: ${response.status} ${response.statusText}`)
+      }
+
+      const data = await response.json()
+      
+      if (data.error) {
+        throw new Error(`Alchemy API error: ${data.error.message}`)
+      }
+
+      if (!data.result || !data.result.transfers) {
+        console.log('No transfers found via Alchemy API')
+        return []
+      }
+
+      console.log(`📦 Alchemy returned ${data.result.transfers.length} transfers`)
+
+      // Map Alchemy transfers to your BlockchainTransaction type
+      const transactions: BlockchainTransaction[] = []
+      
+      for (const transfer of data.result.transfers) {
+        try {
+          // Skip transfers that don't involve our contracts
+          const isRelevantContract = transfer.rawContract?.address && (
+            transfer.rawContract.address.toLowerCase() === this.bucketVaultAddress.toLowerCase() ||
+            transfer.rawContract.address.toLowerCase() === this.payrollEngineAddress.toLowerCase()
+          )
+
+          if (!isRelevantContract) {
+            continue
+          }
+
+          // Get block timestamp for accurate transaction time
+          let timestamp: Date
+          try {
+            const block = await this.rpcProvider.executeRead(async (client: any) => {
+              return client.getBlock({ blockNumber: BigInt(transfer.blockNum) })
+            })
+            timestamp = new Date(Number(block.timestamp) * 1000)
+          } catch (error) {
+            // Fallback to current time if block fetch fails
+            timestamp = new Date()
+          }
+
+          const transaction: BlockchainTransaction = {
+            id: `${transfer.hash}-${transfer.uniqueId || '0'}`,
+            hash: transfer.hash as `0x${string}`,
+            type: this.inferTypeFromAlchemyTransfer(transfer),
+            amount: BigInt(transfer.value || '0'),
+            fromBucket: transfer.metadata?.fromBucket,
+            toBucket: transfer.metadata?.toBucket,
+            recipient: transfer.to || undefined,
+            timestamp,
+            blockNumber: BigInt(transfer.blockNum),
+            status: 'completed', // Alchemy only returns confirmed transactions
+            gasUsed: BigInt(0), // Will be filled if needed
+            gasCost: BigInt(0),
+            description: this.generateDescriptionFromAlchemyTransfer(transfer),
+            metadata: this.extractMetadataFromAlchemyTransfer(transfer),
+            contractAddress: transfer.rawContract?.address as `0x${string}` || this.bucketVaultAddress,
+            eventName: transfer.rawContract?.eventName || 'Transfer'
+          }
+
+          transactions.push(transaction)
+        } catch (error) {
+          console.warn('Failed to process Alchemy transfer:', error, transfer)
+          // Continue processing other transfers
+        }
+      }
+
+      // Handle pagination if there are more results
+      if (data.result.pageKey && transactions.length < 10000) { // Reasonable limit
+        console.log('📄 Fetching additional pages...')
+        const additionalTxs = await this.fetchAlchemyPaginatedResults(
+          alchemyEndpoint, 
+          payload, 
+          data.result.pageKey,
+          userAddress
+        )
+        transactions.push(...additionalTxs)
+      }
+
+      // Sort by block number and timestamp
+      const sortedTransactions = transactions.sort((a, b) => {
+        const blockDiff = Number(a.blockNumber - b.blockNumber)
+        if (blockDiff !== 0) return blockDiff
+        return a.timestamp.getTime() - b.timestamp.getTime()
+      })
+
+      console.log(`✅ Alchemy API processed ${sortedTransactions.length} relevant transactions`)
+      return sortedTransactions
+
+    } catch (error) {
+      console.error('Alchemy Transfer API failed:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Fetch paginated results from Alchemy API
+   */
+  private async fetchAlchemyPaginatedResults(
+    endpoint: string,
+    basePayload: any,
+    pageKey: string,
+    userAddress: string,
+    maxPages: number = 10
+  ): Promise<BlockchainTransaction[]> {
+    const allTransactions: BlockchainTransaction[] = []
+    let currentPageKey = pageKey
+    let pageCount = 0
+
+    while (currentPageKey && pageCount < maxPages) {
+      try {
+        const paginatedPayload = {
+          ...basePayload,
+          params: [{
+            ...basePayload.params[0],
+            pageKey: currentPageKey
+          }]
+        }
+
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          body: JSON.stringify(paginatedPayload)
+        })
+
+        const data = await response.json()
+        
+        if (data.error || !data.result?.transfers) {
+          break
+        }
+
+        // Process transfers from this page
+        for (const transfer of data.result.transfers) {
+          try {
+            const isRelevantContract = transfer.rawContract?.address && (
+              transfer.rawContract.address.toLowerCase() === this.bucketVaultAddress.toLowerCase() ||
+              transfer.rawContract.address.toLowerCase() === this.payrollEngineAddress.toLowerCase()
+            )
+
+            if (!isRelevantContract) continue
+
+            let timestamp: Date
+            try {
+              const block = await this.rpcProvider.executeRead(async (client: any) => {
+                return client.getBlock({ blockNumber: BigInt(transfer.blockNum) })
+              })
+              timestamp = new Date(Number(block.timestamp) * 1000)
+            } catch (error) {
+              timestamp = new Date()
+            }
+
+            const transaction: BlockchainTransaction = {
+              id: `${transfer.hash}-${transfer.uniqueId || '0'}`,
+              hash: transfer.hash as `0x${string}`,
+              type: this.inferTypeFromAlchemyTransfer(transfer),
+              amount: BigInt(transfer.value || '0'),
+              fromBucket: transfer.metadata?.fromBucket,
+              toBucket: transfer.metadata?.toBucket,
+              recipient: transfer.to || undefined,
+              timestamp,
+              blockNumber: BigInt(transfer.blockNum),
+              status: 'completed',
+              gasUsed: BigInt(0),
+              gasCost: BigInt(0),
+              description: this.generateDescriptionFromAlchemyTransfer(transfer),
+              metadata: this.extractMetadataFromAlchemyTransfer(transfer),
+              contractAddress: transfer.rawContract?.address as `0x${string}` || this.bucketVaultAddress,
+              eventName: transfer.rawContract?.eventName || 'Transfer'
+            }
+
+            allTransactions.push(transaction)
+          } catch (error) {
+            console.warn('Failed to process paginated transfer:', error)
+          }
+        }
+
+        currentPageKey = data.result.pageKey
+        pageCount++
+        
+        console.log(`📄 Processed page ${pageCount}, found ${data.result.transfers.length} transfers`)
+        
+        // Add small delay between requests
+        await new Promise(resolve => setTimeout(resolve, 100))
+        
+      } catch (error) {
+        console.error('Failed to fetch paginated results:', error)
+        break
+      }
+    }
+
+    return allTransactions
+  }
+
+  /**
+   * Infer transaction type from Alchemy transfer data
+   */
+  private inferTypeFromAlchemyTransfer(transfer: any): TransactionType {
+    const contractAddress = transfer.rawContract?.address?.toLowerCase()
+    const eventName = transfer.rawContract?.eventName
+    
+    // Map based on contract and event
+    if (contractAddress === this.bucketVaultAddress.toLowerCase()) {
+      if (eventName === 'FundsSplit') return 'split'
+      if (eventName === 'BucketTransfer') return 'transfer'
+      if (eventName === 'GoalCompleted') return 'goal_completed'
+      if (transfer.category === 'external' && transfer.value > 0) return 'deposit'
+    }
+    
+    if (contractAddress === this.payrollEngineAddress.toLowerCase()) {
+      if (eventName === 'PayrollProcessed') return 'payroll_processed'
+      if (eventName === 'PayrollScheduled') return 'payroll_scheduled'
+      if (eventName === 'EmployeeAdded') return 'employee_added'
+    }
+    
+    // Default based on transfer direction and value
+    if (transfer.to?.toLowerCase() === transfer.from?.toLowerCase()) return 'transfer'
+    if (transfer.value > 0) return 'deposit'
+    
+    return 'transfer'
+  }
+
+  /**
+   * Generate description from Alchemy transfer data
+   */
+  private generateDescriptionFromAlchemyTransfer(transfer: any): string {
+    const type = this.inferTypeFromAlchemyTransfer(transfer)
+    const value = transfer.value || '0'
+    const asset = transfer.asset || 'tokens'
+    
+    switch (type) {
+      case 'split':
+        return `Auto-split deposit of ${value} ${asset}`
+      case 'transfer':
+        return `Transfer of ${value} ${asset}`
+      case 'deposit':
+        return `Deposit of ${value} ${asset}`
+      case 'payroll_processed':
+        return `Payroll processed: ${value} ${asset}`
+      case 'goal_completed':
+        return `Savings goal completed`
+      default:
+        return `Transaction: ${value} ${asset}`
+    }
+  }
+
+  /**
+   * Extract metadata from Alchemy transfer data
+   */
+  private extractMetadataFromAlchemyTransfer(transfer: any): TransactionMetadata {
+    const metadata: TransactionMetadata = {}
+    
+    // Extract any available metadata from the transfer
+    if (transfer.metadata) {
+      if (transfer.metadata.splitConfig) {
+        metadata.splitConfig = transfer.metadata.splitConfig
+      }
+      if (transfer.metadata.goalId) {
+        metadata.goalId = BigInt(transfer.metadata.goalId)
+      }
+      if (transfer.metadata.batchId) {
+        metadata.batchId = BigInt(transfer.metadata.batchId)
+      }
+    }
+    
+    return metadata
+  }
+
+  /**
+   * Fetch user transactions via Alchemy Transfer API (no block scanning)
+   * Filters for your contracts; paginates for full history
+   */
+  async fetchUserTransactionsAlchemy(
+    userAddress: string,
+    options: TransactionSyncOptions = {}
+  ): Promise<BlockchainTransaction[]> {
+    try {
+      const alchemyUrl = this.networkType === 'sepolia' 
+        ? `https://mantle-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`
+        : `https://mantle-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`
+
+      console.log(`🔍 Fetching transactions via Alchemy for ${userAddress}`)
+      
+      const response = await fetch(alchemyUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: 1,
+          jsonrpc: '2.0',
+          method: 'alchemy_getAssetTransfers',
+          params: [{
+            fromBlock: options.fromBlock ? `0x${options.fromBlock.toString(16)}` : '0x0',
+            toBlock: options.toBlock ? `0x${options.toBlock.toString(16)}` : 'latest',
+            fromAddress: userAddress,
+            toAddress: userAddress,
+            category: ['external', 'internal', 'erc20', 'erc721', 'erc1155'],
+            contractAddresses: [this.bucketVaultAddress, this.payrollEngineAddress],
+            maxCount: '0x64', // 100 per page
+            withMetadata: true,
+            excludeZeroValue: false
+          }]
+        })
+      })
+
+      if (!response.ok) {
+        throw new Error(`Alchemy API error: ${response.status} ${response.statusText}`)
+      }
+
+      const data = await response.json()
+      
+      if (data.error) {
+        throw new Error(`Alchemy API error: ${data.error.message}`)
+      }
+
+      if (!data.result || !data.result.transfers) {
+        console.log('No transfers found via Alchemy API')
+        return []
+      }
+
+      console.log(`📦 Alchemy returned ${data.result.transfers.length} transfers`)
+
+      // Map Alchemy transfers to BlockchainTransaction format
+      const transactions: BlockchainTransaction[] = []
+      
+      for (const transfer of data.result.transfers) {
+        try {
+          const transaction: BlockchainTransaction = {
+            id: `${transfer.hash}-${transfer.logIndex || 0}`,
+            hash: transfer.hash as `0x${string}`,
+            type: this.inferTypeFromAlchemyTransfer(transfer),
+            amount: BigInt(transfer.value ? Math.floor(parseFloat(transfer.value) * 1e18) : 0),
+            fromBucket: transfer.metadata?.fromBucket,
+            toBucket: transfer.metadata?.toBucket,
+            recipient: transfer.to || undefined,
+            timestamp: new Date(transfer.metadata?.blockTimestamp ? 
+              Number(transfer.metadata.blockTimestamp) * 1000 : Date.now()),
+            blockNumber: BigInt(parseInt(transfer.blockNum, 16)),
+            status: 'completed',
+            gasUsed: BigInt(0), // Alchemy doesn't provide gas info in transfers
+            gasCost: BigInt(0),
+            description: `${transfer.category} transfer of ${transfer.value || '0'} ${transfer.asset || 'tokens'}`,
+            metadata: {
+              // Parse any additional metadata from Alchemy
+              ...transfer.metadata
+            },
+            contractAddress: transfer.rawContract?.address as `0x${string}` || this.bucketVaultAddress,
+            eventName: transfer.category || 'Transfer'
+          }
+          
+          transactions.push(transaction)
+        } catch (error) {
+          console.warn('Failed to parse Alchemy transfer:', error, transfer)
+        }
+      }
+
+      // Handle pagination if there are more results
+      let pageKey = data.result.pageKey
+      while (pageKey && transactions.length < 1000) { // Limit to prevent infinite loops
+        try {
+          const nextResponse = await fetch(alchemyUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              id: 1,
+              jsonrpc: '2.0',
+              method: 'alchemy_getAssetTransfers',
+              params: [{
+                fromBlock: options.fromBlock ? `0x${options.fromBlock.toString(16)}` : '0x0',
+                toBlock: options.toBlock ? `0x${options.toBlock.toString(16)}` : 'latest',
+                fromAddress: userAddress,
+                toAddress: userAddress,
+                category: ['external', 'internal', 'erc20', 'erc721', 'erc1155'],
+                contractAddresses: [this.bucketVaultAddress, this.payrollEngineAddress],
+                maxCount: '0x64',
+                withMetadata: true,
+                excludeZeroValue: false,
+                pageKey: pageKey
+              }]
+            })
+          })
+
+          const nextData = await nextResponse.json()
+          if (nextData.result && nextData.result.transfers) {
+            for (const transfer of nextData.result.transfers) {
+              try {
+                const transaction: BlockchainTransaction = {
+                  id: `${transfer.hash}-${transfer.logIndex || 0}`,
+                  hash: transfer.hash as `0x${string}`,
+                  type: this.inferTypeFromAlchemyTransfer(transfer),
+                  amount: BigInt(transfer.value ? Math.floor(parseFloat(transfer.value) * 1e18) : 0),
+                  fromBucket: transfer.metadata?.fromBucket,
+                  toBucket: transfer.metadata?.toBucket,
+                  recipient: transfer.to || undefined,
+                  timestamp: new Date(transfer.metadata?.blockTimestamp ? 
+                    Number(transfer.metadata.blockTimestamp) * 1000 : Date.now()),
+                  blockNumber: BigInt(parseInt(transfer.blockNum, 16)),
+                  status: 'completed',
+                  gasUsed: BigInt(0),
+                  gasCost: BigInt(0),
+                  description: `${transfer.category} transfer of ${transfer.value || '0'} ${transfer.asset || 'tokens'}`,
+                  metadata: { ...transfer.metadata },
+                  contractAddress: transfer.rawContract?.address as `0x${string}` || this.bucketVaultAddress,
+                  eventName: transfer.category || 'Transfer'
+                }
+                
+                transactions.push(transaction)
+              } catch (error) {
+                console.warn('Failed to parse paginated Alchemy transfer:', error)
+              }
+            }
+          }
+          
+          pageKey = nextData.result?.pageKey
+        } catch (error) {
+          console.warn('Failed to fetch paginated results:', error)
+          break
+        }
+      }
+
+      console.log(`✅ Processed ${transactions.length} transactions from Alchemy API`)
+      
+      return transactions.sort((a, b) => Number(a.blockNumber - b.blockNumber))
+      
+    } catch (error) {
+      console.error('Alchemy fetch failed:', error)
+      // Fallback to existing getLogs method
+      console.log('🔄 Falling back to standard RPC method...')
+      return this.syncHistoricalTransactions(userAddress, options)
+    }
+  }
+
+  /**
+   * Helper: Infer transaction type from Alchemy transfer data
+   */
+  private inferTypeFromAlchemyTransfer(transfer: any): TransactionType {
+    const contract = transfer.rawContract?.address?.toLowerCase()
+    const eventName = transfer.metadata?.eventName || transfer.category
+    
+    if (contract === this.bucketVaultAddress.toLowerCase()) {
+      if (eventName === 'FundsSplit') return 'split'
+      if (eventName === 'BucketTransfer') return 'transfer'
+      if (eventName === 'GoalCompleted') return 'goal_completed'
+    }
+    
+    if (contract === this.payrollEngineAddress.toLowerCase()) {
+      if (eventName === 'PayrollProcessed') return 'payroll_processed'
+      if (eventName === 'EmployeeAdded') return 'employee_added'
+      if (eventName === 'PayrollScheduled') return 'payroll_scheduled'
+    }
+    
+    // Default categorization based on transfer type
+    if (transfer.category === 'external') return 'deposit'
+    if (transfer.category === 'internal') return 'transfer'
+    
+    return 'transfer' // Default fallback
+  }
+
+  /**
+   * Incremental sync - only fetch new transactions since last sync
+   */
+  async syncIncrementalTransactions(userAddress: string): Promise<BlockchainTransaction[]> {
+    try {
+      // Get last synced block
+      const lastSyncedBlock = await transactionCache.getLastSyncedBlock(userAddress, this.chainId)
+      
+      if (!lastSyncedBlock) {
+        // No previous sync, do full sync with small range
+        console.log('No previous sync found, doing initial sync')
+        return this.syncRecentTransactions(userAddress)
+      }
+
+      // Get current block
+      const currentBlock = await this.rpcProvider.executeRead(async (client: any) => {
+        return client.getBlockNumber()
+      })
+
+      // If we're already up to date, return empty
+      if (lastSyncedBlock >= currentBlock) {
+        console.log('Already up to date')
+        return []
+      }
+
+      // Sync from last block to current (with reasonable limits)
+      const maxIncrementalBlocks = BigInt(100) // Conservative limit for incremental sync
+      const fromBlock = lastSyncedBlock + BigInt(1)
+      const toBlock = currentBlock - fromBlock > maxIncrementalBlocks 
+        ? fromBlock + maxIncrementalBlocks 
+        : currentBlock
+
+      console.log(`Incremental sync from block ${fromBlock} to ${toBlock}`)
+
+      const newTransactions = await this.syncHistoricalTransactions(userAddress, {
+        fromBlock,
+        toBlock,
+        maxBlocks: Number(toBlock - fromBlock + BigInt(1)),
+        includePayroll: true
+      })
+
+      // Cache new transactions
+      if (newTransactions.length > 0) {
+        console.log(`💾 CACHING INCREMENTAL TRANSACTION DATA:`)
+        console.log(`   User: ${userAddress}`)
+        console.log(`   Chain: ${this.chainId}`)
+        console.log(`   New transactions: ${newTransactions.length}`)
+        
+        await transactionCache.storeTransactions(newTransactions, userAddress, this.chainId)
+        
+        // Update metadata
+        const metadata: SyncMetadata = {
+          userAddress,
+          chainId: this.chainId,
+          lastSyncedBlock: toBlock.toString(),
+          lastSyncedTimestamp: Date.now(),
+          totalTransactions: (await transactionCache.getTransactions(userAddress, this.chainId)).length,
+          lastUpdated: Date.now()
+        }
+        
+        await transactionCache.updateSyncMetadata(metadata)
+        console.log(`✅ Incrementally synced and cached ${newTransactions.length} new transactions`)
+      }
+
+      return newTransactions
+    } catch (error) {
+      console.error('Incremental sync failed:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Get cache statistics for debugging
+   */
+  async getCacheInfo(userAddress: string): Promise<{
+    hasCache: boolean
+    stats: any
+    metadata: SyncMetadata | null
+  }> {
+    const stats = await transactionCache.getCacheStats(userAddress, this.chainId)
+    const metadata = await transactionCache.getSyncMetadata(userAddress, this.chainId)
+    
+    return {
+      hasCache: stats.totalTransactions > 0,
+      stats,
+      metadata
+    }
+  }
+
+  /**
+   * Clear cache for user (useful for troubleshooting)
+   */
+  async clearCache(userAddress: string): Promise<void> {
+    await transactionCache.clearUserCache(userAddress, this.chainId)
+    console.log(`Cleared cache for ${userAddress} on chain ${this.chainId}`)
+  }
+
+  /**
+   * Sync recent transactions (optimized for onboarding UX)
+   */
+  async syncRecentTransactions(userAddress: string, maxBlocks: number = 100): Promise<BlockchainTransaction[]> {
+    try {
+      const currentBlock = await this.rpcProvider.executeRead(async (client: any) => {
+        return client.getBlockNumber()
+      })
+      
+      // Sync only recent blocks for fast UX
+      const fromBlock = currentBlock - BigInt(maxBlocks)
+      
+      console.log(`Syncing recent ${maxBlocks} blocks for onboarding UX`)
+      
+      return this.syncHistoricalTransactions(userAddress, {
+        fromBlock: fromBlock > BigInt(0) ? fromBlock : BigInt(0),
+        toBlock: currentBlock,
+        maxBlocks,
+        includePayroll: true
+      })
+    } catch (error) {
+      console.error('Error syncing recent transactions:', error)
+      throw new Error(`Failed to sync recent transactions: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+  }
+
+  /**
+   * Sync transactions in smaller batches for large date ranges
+   * This is useful when you need to sync a lot of historical data without hitting RPC limits
+   */
+  async syncTransactionsBatched(
+    userAddress: string,
+    fromBlock: bigint,
+    toBlock: bigint,
+    batchSize: number = 50, // Very conservative batch size
+    onProgress?: (progress: { current: bigint; total: bigint; percentage: number }) => void
+  ): Promise<BlockchainTransaction[]> {
+    const allTransactions: BlockchainTransaction[] = []
+    const totalBlocks = toBlock - fromBlock + BigInt(1)
+    let currentFromBlock = fromBlock
+    
+    console.log(`Starting batched sync for ${totalBlocks} blocks in batches of ${batchSize}`)
+    
+    while (currentFromBlock <= toBlock) {
+      const currentToBlock = currentFromBlock + BigInt(batchSize) - BigInt(1) > toBlock 
+        ? toBlock 
+        : currentFromBlock + BigInt(batchSize) - BigInt(1)
+      
+      try {
+        console.log(`Syncing batch: blocks ${currentFromBlock} to ${currentToBlock}`)
+        
+        const batchTransactions = await this.syncHistoricalTransactions(userAddress, {
+          fromBlock: currentFromBlock,
+          toBlock: currentToBlock,
+          maxBlocks: batchSize
+        })
+        
+        allTransactions.push(...batchTransactions)
+        
+        // Report progress
+        if (onProgress) {
+          const processed = currentToBlock - fromBlock + BigInt(1)
+          const percentage = Number(processed * BigInt(100) / totalBlocks)
+          onProgress({
+            current: currentToBlock,
+            total: toBlock,
+            percentage
+          })
+        }
+        
+        // Add delay between batches to be respectful to RPC providers
+        await new Promise(resolve => setTimeout(resolve, 500))
+        
+      } catch (error) {
+        console.error(`Failed to sync batch ${currentFromBlock}-${currentToBlock}:`, error)
+        // Continue with next batch instead of failing completely
+      }
+      
+      currentFromBlock = currentToBlock + BigInt(1)
+    }
+    
+    // Sort all transactions
+    return allTransactions.sort((a, b) => {
+      const blockDiff = Number(a.blockNumber - b.blockNumber)
+      if (blockDiff !== 0) return blockDiff
+      return a.timestamp.getTime() - b.timestamp.getTime()
+    })
   }
 
   /**
    * Sync all historical transactions for a user from wallet creation date
    * 
-   * Note: Mantle Sepolia RPC has a maximum block range limit of 30,000 blocks per eth_getLogs request.
-   * This method automatically chunks large ranges to stay within this limit.
+   * Note: Different RPC providers have various limits:
+   * - Alchemy Free Tier: 10 blocks max per eth_getLogs request
+   * - Mantle RPC: ~100 blocks max to avoid 413 Content Too Large errors
+   * This method automatically adapts to these limits.
    */
   async syncHistoricalTransactions(
     userAddress: string, 
@@ -101,14 +953,16 @@ export class TransactionSyncService {
         return client.getBlockNumber()
       })
       
-      // Default to syncing from 7 days ago or genesis block (much more conservative)
-      const defaultFromBlock = currentBlock - BigInt(7 * 24 * 60 * 2) // ~7 days of blocks (2 min block time)
-      const fromBlock = options.fromBlock || (defaultFromBlock > 0n ? defaultFromBlock : 0n)
+      // Default to syncing from 1 day ago (very conservative)
+      const defaultFromBlock = currentBlock - BigInt(1 * 24 * 60 * 2) // ~1 day of blocks (2 min block time)
+      const fromBlock = options.fromBlock || (defaultFromBlock > BigInt(0) ? defaultFromBlock : BigInt(0))
       const toBlock = options.toBlock || currentBlock
       
-      // Ensure we don't exceed the maximum block range (25,000 blocks for Mantle to be safe)
-      const maxBlockRange = BigInt(options.maxBlocks || 20000) // Use 20k to be extra safe
+      // Ensure we don't exceed reasonable limits (ultra conservative: 100 blocks max)
+      const maxBlockRange = BigInt(options.maxBlocks || 100)
       const actualFromBlock = toBlock - maxBlockRange > fromBlock ? toBlock - maxBlockRange : fromBlock
+      
+      console.log(`Syncing transactions from block ${actualFromBlock} to ${toBlock} (${toBlock - actualFromBlock + BigInt(1)} blocks)`)
       
       // Sync BucketVault transactions
       const bucketTransactions = await this.syncBucketVaultTransactions(
@@ -144,24 +998,34 @@ export class TransactionSyncService {
   /**
    * Helper function to chunk large block ranges into smaller requests
    * 
-   * Mantle Sepolia RPC has a maximum block range limit of 30,000 blocks per eth_getLogs request.
-   * This function automatically splits large ranges into smaller chunks to avoid 413 errors.
+   * Handles different RPC provider limitations:
+   * - Alchemy Free Tier: 10 blocks max per eth_getLogs request
+   * - Mantle RPC: ~50 blocks max to avoid 413 Content Too Large errors
+   * - Other RPCs: Various limits
    */
   private async getLogsInChunks(
     logParams: any,
     fromBlock: bigint,
     toBlock: bigint,
-    maxChunkSize: bigint = 15000n // Reduced from 25k to 15k for better reliability
+    maxChunkSize: bigint = BigInt(5) // Start ultra-conservative for Alchemy free tier
   ): Promise<any[]> {
     const allLogs: any[] = []
     let currentFromBlock = fromBlock
+    let currentChunkSize = maxChunkSize
+    let consecutiveFailures = 0
+    
+    // Calculate total blocks to process
+    const totalBlocks = toBlock - fromBlock + BigInt(1)
+    console.log(`Processing ${totalBlocks} blocks in chunks of ${maxChunkSize}`)
     
     while (currentFromBlock <= toBlock) {
-      const currentToBlock = currentFromBlock + maxChunkSize - 1n > toBlock 
+      const currentToBlock = currentFromBlock + currentChunkSize - BigInt(1) > toBlock 
         ? toBlock 
-        : currentFromBlock + maxChunkSize - 1n
+        : currentFromBlock + currentChunkSize - BigInt(1)
       
       try {
+        console.log(`Fetching logs for blocks ${currentFromBlock} to ${currentToBlock} (chunk size: ${currentChunkSize})`)
+        
         const logs = await this.rpcProvider.executeRead(async (client: any) => {
           return client.getLogs({
             ...logParams,
@@ -169,24 +1033,64 @@ export class TransactionSyncService {
             toBlock: currentToBlock
           })
         })
+        
         allLogs.push(...logs)
-      } catch (error) {
-        console.warn(`Failed to get logs for blocks ${currentFromBlock}-${currentToBlock}:`, error)
-        // If even a smaller chunk fails, try with an even smaller chunk
-        if (maxChunkSize > 1000n) {
-          const smallerChunkLogs = await this.getLogsInChunks(
-            logParams, 
-            currentFromBlock, 
-            currentToBlock, 
-            1000n
-          )
-          allLogs.push(...smallerChunkLogs)
+        console.log(`Found ${logs.length} logs in chunk`)
+        
+        // Success - reset failure counter and potentially increase chunk size
+        consecutiveFailures = 0
+        if (currentChunkSize < BigInt(10) && logs.length < 50) {
+          // Gradually increase chunk size if we're getting small results, but cap at 10 for Alchemy
+          currentChunkSize = BigInt(Math.min(Number(currentChunkSize) + 1, 10))
         }
+        
+        // Add a small delay between requests to avoid rate limiting
+        if (currentFromBlock + currentChunkSize <= toBlock) {
+          await new Promise(resolve => setTimeout(resolve, 300)) // 300ms delay
+        }
+        
+      } catch (error: unknown) {
+        const errorMessage = (error as Error).message || String(error)
+        console.warn(`Failed to get logs for blocks ${currentFromBlock}-${currentToBlock}:`, errorMessage)
+        
+        consecutiveFailures++
+        
+        // Handle specific error types
+        if (errorMessage.includes('Under the Free tier plan') || errorMessage.includes('10 block range')) {
+          // Alchemy free tier limit - use exactly 5 blocks to be safe
+          currentChunkSize = BigInt(5)
+          console.log('Detected Alchemy free tier limit, using 5 block chunks')
+        } else if (errorMessage.includes('413') || errorMessage.includes('Content Too Large')) {
+          // Content too large - reduce chunk size significantly
+          currentChunkSize = BigInt(Math.max(1, Number(currentChunkSize) / 3))
+          console.log(`Content too large error, reducing chunk size to ${currentChunkSize}`)
+        } else if (errorMessage.includes('timeout') || errorMessage.includes('network')) {
+          // Network issues - reduce chunk size and add longer delay
+          currentChunkSize = BigInt(Math.max(1, Number(currentChunkSize) / 2))
+          console.log(`Network error, reducing chunk size to ${currentChunkSize}`)
+          await new Promise(resolve => setTimeout(resolve, 2000)) // 2s delay for network issues
+        } else {
+          // Generic error - reduce chunk size
+          currentChunkSize = BigInt(Math.max(1, Number(currentChunkSize) / 2))
+        }
+        
+        // If we're already at minimum chunk size and still failing, skip this range
+        if (currentChunkSize <= BigInt(1) && consecutiveFailures >= 3) {
+          console.error(`Skipping blocks ${currentFromBlock}-${currentToBlock} after ${consecutiveFailures} failures`)
+          currentFromBlock = currentToBlock + BigInt(1)
+          consecutiveFailures = 0
+          currentChunkSize = BigInt(5) // Reset chunk size for next range
+          continue
+        }
+        
+        // Don't advance the block range on failure - retry with smaller chunk
+        continue
       }
       
-      currentFromBlock = currentToBlock + 1n
+      currentFromBlock = currentToBlock + BigInt(1)
     }
     
+    console.log(`Total logs collected: ${allLogs.length}`)
     return allLogs
   }
 
@@ -534,7 +1438,7 @@ export class TransactionSyncService {
           }
         ],
         args: { user: userAddress as `0x${string}` },
-        onLogs: async (logs) => {
+        onLogs: async (logs: any[]) => {
           for (const log of logs) {
             const block = await this.rpcProvider.executeRead(async (client: any) => {
               return client.getBlock({ blockNumber: log.blockNumber })
@@ -606,7 +1510,7 @@ export class TransactionSyncService {
           }
         ],
         args: { employer: userAddress as `0x${string}` },
-        onLogs: async (logs) => {
+        onLogs: async (logs: any[]) => {
           for (const log of logs) {
             const block = await this.rpcProvider.executeRead(async (client: any) => {
               return client.getBlock({ blockNumber: log.blockNumber })

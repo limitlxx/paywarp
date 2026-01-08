@@ -144,9 +144,32 @@ export function useOptimizedBlockchainBuckets() {
     },
   ]
 
-  // Optimized fetch bucket balances with mobile considerations
+  // Rate limiting state
+  const [lastFetchTime, setLastFetchTime] = useState(0)
+  const [fetchTimeoutId, setFetchTimeoutId] = useState<NodeJS.Timeout | null>(null)
+  const MIN_FETCH_INTERVAL = 5000 // 5 seconds minimum between fetches
+
+  // Optimized fetch bucket balances with mobile considerations and rate limiting
   const fetchBucketBalances = useCallback(async () => {
-    if (!bucketVaultContract || !address || !isConnected) {
+    if (!address || !isConnected) {
+      return
+    }
+
+    if (!bucketVaultContract) {
+      setError('Contracts not deployed on current network. Please switch to Sepolia testnet.')
+      return
+    }
+
+    // Rate limiting check
+    const now = Date.now()
+    if (now - lastFetchTime < MIN_FETCH_INTERVAL) {
+      console.log('Rate limiting: skipping fetch, too soon since last fetch')
+      return
+    }
+
+    // Don't fetch if we're already loading
+    if (isLoading) {
+      console.log('Skipping bucket balance fetch: already loading')
       return
     }
 
@@ -223,13 +246,40 @@ export function useOptimizedBlockchainBuckets() {
       console.error('Error fetching bucket balances:', err)
     } finally {
       setIsLoading(false)
+      setLastFetchTime(Date.now()) // Update last fetch time
     }
   }, [bucketVaultContract, address, isConnected, capabilities])
 
-  // Optimized deposit and split with batching
+  // Debounced fetch function to prevent rapid successive calls
+  const debouncedFetchBucketBalances = useCallback(() => {
+    // Clear any existing timeout
+    if (fetchTimeoutId) {
+      clearTimeout(fetchTimeoutId)
+    }
+
+    // Set a new timeout
+    const timeoutId = setTimeout(() => {
+      fetchBucketBalances()
+    }, 500) // 500ms debounce
+
+    setFetchTimeoutId(timeoutId)
+  }, [fetchBucketBalances, fetchTimeoutId])
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (fetchTimeoutId) {
+        clearTimeout(fetchTimeoutId)
+      }
+    }
+  }, [fetchTimeoutId])
   const depositAndSplit = useCallback(async (amount: number) => {
-    if (!bucketVaultWriteContract || !address) {
-      throw new Error('Contract not available or wallet not connected')
+    if (!address) {
+      throw new Error('Wallet not connected')
+    }
+
+    if (!bucketVaultWriteContract) {
+      throw new Error('Contracts not deployed on current network. Please switch to Sepolia testnet.')
     }
 
     return executeWithLoading(async () => {
@@ -279,8 +329,12 @@ export function useOptimizedBlockchainBuckets() {
 
   // Optimized transfer between buckets
   const transferBetweenBuckets = useCallback(async (fromId: BucketType, toId: BucketType, amount: number) => {
-    if (!bucketVaultWriteContract || !address) {
-      throw new Error('Contract not available or wallet not connected')
+    if (!address) {
+      throw new Error('Wallet not connected')
+    }
+
+    if (!bucketVaultWriteContract) {
+      throw new Error('Contracts not deployed on current network. Please switch to Sepolia testnet.')
     }
 
     return executeWithLoading(async () => {
@@ -333,8 +387,12 @@ export function useOptimizedBlockchainBuckets() {
 
   // Optimized withdraw from bucket
   const withdrawFromBucket = useCallback(async (bucketId: BucketType, amount: number) => {
-    if (!bucketVaultWriteContract || !address) {
-      throw new Error('Contract not available or wallet not connected')
+    if (!address) {
+      throw new Error('Wallet not connected')
+    }
+
+    if (!bucketVaultWriteContract) {
+      throw new Error('Contracts not deployed on current network. Please switch to Sepolia testnet.')
     }
 
     return executeWithLoading(async () => {
@@ -463,14 +521,14 @@ export function useOptimizedBlockchainBuckets() {
   // Initial data fetch and refresh on connection changes
   useEffect(() => {
     if (isConnected && address && bucketVaultContract) {
-      fetchBucketBalances()
+      debouncedFetchBucketBalances()
     } else {
       // Clear data when disconnected
       setBuckets([])
       setSplitConfig(null)
       setError(null)
     }
-  }, [isConnected, address, bucketVaultContract, fetchBucketBalances])
+  }, [isConnected, address, bucketVaultContract]) // Removed fetchBucketBalances from dependencies
 
   // Clean up old pending transactions
   useEffect(() => {

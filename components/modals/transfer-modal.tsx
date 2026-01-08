@@ -16,7 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ArrowRightLeft, CheckCircle2, Loader2, ArrowRight } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import { useBlockchainBuckets } from "@/hooks/use-blockchain-buckets"
-import { useWallet } from "@/hooks/use-wallet"
+import { useWallet } from "@/hooks/use-wallet.tsx"
 import { useToast } from "@/hooks/use-toast"
 import type { BucketType } from "@/lib/types"
 

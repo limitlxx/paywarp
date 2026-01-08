@@ -4,7 +4,7 @@ import { useNetwork } from './use-network'
 import { faucetService, type FaucetRequest, type FaucetResult } from '@/lib/faucet-service'
 
 interface FaucetState {
-  isLoading: boolean
+  loadingTokens: Record<string, boolean>
   error: string | null
   lastClaimTimes: Record<string, number>
   transactionHashes: Record<string, string>
@@ -16,7 +16,7 @@ export function useFaucet() {
   const { isTestnet } = useNetwork()
   
   const [state, setState] = useState<FaucetState>({
-    isLoading: false,
+    loadingTokens: {},
     error: null,
     lastClaimTimes: {},
     transactionHashes: {},
@@ -62,7 +62,7 @@ export function useFaucet() {
 
     setState(prev => ({
       ...prev,
-      isLoading: true,
+      loadingTokens: { ...prev.loadingTokens, [tokenSymbol]: true },
       error: null,
       claimStatus: { ...prev.claimStatus, [tokenSymbol]: 'pending' }
     }))
@@ -75,7 +75,7 @@ export function useFaucet() {
 
       setState(prev => ({
         ...prev,
-        isLoading: false,
+        loadingTokens: { ...prev.loadingTokens, [tokenSymbol]: false },
         claimStatus: { 
           ...prev.claimStatus, 
           [tokenSymbol]: result.success ? 'success' : 'failed' 
@@ -97,7 +97,7 @@ export function useFaucet() {
       
       setState(prev => ({
         ...prev,
-        isLoading: false,
+        loadingTokens: { ...prev.loadingTokens, [tokenSymbol]: false },
         error: errorMessage,
         claimStatus: { ...prev.claimStatus, [tokenSymbol]: 'failed' }
       }))
@@ -154,6 +154,14 @@ export function useFaucet() {
     }
   }, [])
 
+  // Check if a specific token is loading
+  const isTokenLoading = useCallback((tokenSymbol: 'MNT' | 'USDC') => {
+    return state.loadingTokens[tokenSymbol] || false
+  }, [state.loadingTokens])
+
+  // Check if any token is loading
+  const isAnyLoading = Object.values(state.loadingTokens).some(loading => loading)
+
   // Auto-clear success status after some time
   useEffect(() => {
     const successTokens = Object.entries(state.claimStatus)
@@ -179,7 +187,8 @@ export function useFaucet() {
 
   return {
     // State
-    isLoading: state.isLoading,
+    isLoading: isAnyLoading,
+    isTokenLoading,
     error: state.error,
     claimStatus: state.claimStatus,
     transactionHashes: state.transactionHashes,

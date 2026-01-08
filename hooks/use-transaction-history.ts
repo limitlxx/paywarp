@@ -6,16 +6,18 @@ import {
   TransactionSyncOptions,
   WrappedReport 
 } from '@/lib/transaction-sync'
+import { useUserRegistration } from '@/lib/user-registration'
 
 export interface UseTransactionHistoryReturn {
   // Transaction data
   transactions: BlockchainTransaction[]
   isLoading: boolean
   error: string | null
+  fromCache: boolean // New: indicates if data came from cache
   
   // Sync operations
   syncHistory: (options?: TransactionSyncOptions) => Promise<void>
-  refreshHistory: () => Promise<void>
+  refreshHistory: () => Promise<void> // Now does incremental sync
   
   // Wrapped reports
   wrappedReports: WrappedReport[]
@@ -30,11 +32,16 @@ export interface UseTransactionHistoryReturn {
   categorizedTransactions: Record<string, BlockchainTransaction[]>
   getTransactionsByYear: (year: number) => BlockchainTransaction[]
   getTransactionsByType: (type: string) => BlockchainTransaction[]
+  
+  // Cache management
+  clearCache: () => Promise<void>
+  getCacheInfo: () => Promise<any>
 }
 
 export function useTransactionHistory(): UseTransactionHistoryReturn {
   const { address } = useAccount()
   const chainId = useChainId()
+  const { isRegistered } = useUserRegistration()
   
   // State management
   const [transactions, setTransactions] = useState<BlockchainTransaction[]>([])
@@ -42,6 +49,7 @@ export function useTransactionHistory(): UseTransactionHistoryReturn {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isWatching, setIsWatching] = useState(false)
+  const [fromCache, setFromCache] = useState(false)
   
   // Service and cleanup refs
   const syncServiceRef = useRef<TransactionSyncService | null>(null)
@@ -61,37 +69,68 @@ export function useTransactionHistory(): UseTransactionHistoryReturn {
     }
   }, [chainId])
 
-  // Sync transaction history
+  // Sync transaction history (works for all users)
   const syncHistory = useCallback(async (options: TransactionSyncOptions = {}) => {
     if (!address || !syncServiceRef.current) {
       setError('Wallet not connected or sync service not initialized')
       return
     }
 
+    // Note: Removed registration requirement - deposits should be detected for all users
+    console.log('Syncing transaction history for user:', address)
+
     setIsLoading(true)
     setError(null)
 
     try {
-      const historicalTransactions = await syncServiceRef.current.syncHistoricalTransactions(
-        address, 
-        {
-          includePayroll: true,
-          maxBlocks: 15000, // Further reduced to match chunking size
-          ...options
-        }
-      )
+      let result;
+      
+      // If this is a forced sync (like onboarding), use recent sync
+      if (options.forceSync && options.maxBlocks) {
+        console.log(`Performing initial sync with ${options.maxBlocks} blocks`)
+        const transactions = await syncServiceRef.current.syncRecentTransactions(
+          address, 
+          options.maxBlocks
+        )
+        result = { transactions, fromCache: false }
+      } else {
+        // Use cached transactions with smart syncing for regular use
+        result = await syncServiceRef.current.getCachedTransactions(
+          address, 
+          {
+            includePayroll: true,
+            maxBlocks: 200, // More blocks for regular sync
+            useCache: true,
+            ...options
+          }
+        )
+      }
 
-      setTransactions(historicalTransactions)
+      setTransactions(result.transactions)
+      setFromCache(result.fromCache)
+      
+      if (result.fromCache) {
+        console.log(`📱 LOADED TRANSACTIONS FROM CACHE:`)
+        console.log(`   Count: ${result.transactions.length}`)
+        console.log(`   User: ${address}`)
+        console.log(`   Chain: ${chainId}`)
+      } else {
+        console.log(`🔄 LOADED FRESH TRANSACTIONS FROM BLOCKCHAIN:`)
+        console.log(`   Count: ${result.transactions.length}`)
+        console.log(`   User: ${address}`)
+        console.log(`   Chain: ${chainId}`)
+        console.log(`   Blocks synced: ${options.maxBlocks || 'default'}`)
+      }
       
       // Generate wrapped reports for years with activity
       const yearsWithActivity = new Set(
-        historicalTransactions.map(tx => tx.timestamp.getFullYear())
+        result.transactions.map(tx => tx.timestamp.getFullYear())
       )
       
       const reports: WrappedReport[] = []
       for (const year of yearsWithActivity) {
         const report = TransactionSyncService.generateWrappedData(
-          historicalTransactions, 
+          result.transactions, 
           year, 
           address
         )
@@ -107,12 +146,45 @@ export function useTransactionHistory(): UseTransactionHistoryReturn {
     } finally {
       setIsLoading(false)
     }
-  }, [address])
+  }, [address, isRegistered])
 
-  // Refresh history (re-sync from current point)
+  // Incremental refresh (fetch new transactions for all users)
   const refreshHistory = useCallback(async () => {
-    await syncHistory()
-  }, [syncHistory])
+    if (!address || !syncServiceRef.current) {
+      return
+    }
+
+    console.log('Refreshing transaction history for user:', address)
+
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      const newTransactions = await syncServiceRef.current.syncIncrementalTransactions(address)
+      
+      if (newTransactions.length > 0) {
+        // Merge new transactions with existing ones
+        setTransactions(prev => {
+          const combined = [...prev, ...newTransactions]
+          // Remove duplicates and sort by timestamp
+          const unique = combined.filter((tx, index, arr) => 
+            arr.findIndex(t => t.id === tx.id) === index
+          )
+          return unique.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
+        })
+        
+        console.log(`Added ${newTransactions.length} new transactions`)
+      } else {
+        console.log('No new transactions found')
+      }
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to refresh transaction history'
+      setError(errorMessage)
+      console.error('Transaction refresh error:', err)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [address, isRegistered])
 
   // Generate wrapped report for specific year
   const generateWrapped = useCallback(async (year: number): Promise<WrappedReport> => {
@@ -178,16 +250,74 @@ export function useTransactionHistory(): UseTransactionHistoryReturn {
     }
   }, [])
 
-  // Auto-sync when wallet connects
+  // Auto-load cached data when wallet connects (regardless of registration)
   useEffect(() => {
     if (address && syncServiceRef.current) {
-      syncHistory()
+      // Load from cache first without syncing
+      console.log('Loading cached transactions for user (registration not required)')
+      
+      const loadCachedData = async () => {
+        try {
+          setIsLoading(true)
+          setError(null)
+          
+          // Try to load from cache only
+          const result = await syncServiceRef.current!.getCachedTransactions(
+            address, 
+            {
+              useCache: true,
+              forceSync: false, // Don't force sync
+              maxBlocks: 0 // Don't sync new blocks
+            }
+          )
+          
+          console.log(`📱 LOADED CACHED TRANSACTIONS FOR USER:`)
+          console.log(`   Count: ${result.transactions.length}`)
+          console.log(`   User: ${address}`)
+          console.log(`   From cache: ${result.fromCache}`)
+          console.log(`   Chain: ${chainId}`)
+          
+          setTransactions(result.transactions)
+          setFromCache(result.fromCache)
+          
+          console.log(`Loaded ${result.transactions.length} cached transactions`)
+          
+          // Generate wrapped reports if we have data
+          if (result.transactions.length > 0) {
+            const yearsWithActivity = new Set(
+              result.transactions.map(tx => tx.timestamp.getFullYear())
+            )
+            
+            const reports: WrappedReport[] = []
+            for (const year of yearsWithActivity) {
+              const report = TransactionSyncService.generateWrappedData(
+                result.transactions, 
+                year, 
+                address
+              )
+              reports.push(report)
+            }
+            
+            setWrappedReports(reports.sort((a, b) => b.year - a.year))
+          }
+          
+        } catch (err) {
+          console.log('No cached data available or cache error:', err)
+          // Don't set error for cache miss - just leave empty
+          setTransactions([])
+          setWrappedReports([])
+        } finally {
+          setIsLoading(false)
+        }
+      }
+      
+      loadCachedData()
     }
-  }, [address, syncHistory])
+  }, [address]) // Removed isRegistered dependency
 
-  // Auto-start watching when wallet connects
+  // Auto-start watching when wallet connects (regardless of registration)
   useEffect(() => {
-    if (address && syncServiceRef.current && !isWatching) {
+    if (address && syncServiceRef.current && !isWatching && transactions.length > 0) {
       startWatching()
     }
     
@@ -198,7 +328,7 @@ export function useTransactionHistory(): UseTransactionHistoryReturn {
         watchCleanupRef.current = null
       }
     }
-  }, [address, startWatching, isWatching])
+  }, [address, startWatching, isWatching, transactions.length]) // Removed isRegistered dependency
 
   // Categorize transactions
   const categorizedTransactions = transactions.reduce((acc, tx) => {
@@ -225,10 +355,11 @@ export function useTransactionHistory(): UseTransactionHistoryReturn {
     transactions,
     isLoading,
     error,
+    fromCache, // New: indicates if data came from cache
     
     // Sync operations
     syncHistory,
-    refreshHistory,
+    refreshHistory, // Now does incremental sync
     
     // Wrapped reports
     wrappedReports,
@@ -242,6 +373,22 @@ export function useTransactionHistory(): UseTransactionHistoryReturn {
     // Categorization
     categorizedTransactions,
     getTransactionsByYear,
-    getTransactionsByType
+    getTransactionsByType,
+    
+    // Cache management
+    clearCache: useCallback(async () => {
+      if (address && syncServiceRef.current) {
+        await syncServiceRef.current.clearCache(address)
+        setTransactions([])
+        setWrappedReports([])
+      }
+    }, [address]),
+    
+    getCacheInfo: useCallback(async () => {
+      if (address && syncServiceRef.current) {
+        return syncServiceRef.current.getCacheInfo(address)
+      }
+      return null
+    }, [address])
   }
 }

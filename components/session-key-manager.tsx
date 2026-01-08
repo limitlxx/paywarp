@@ -47,7 +47,24 @@ import {
 } from 'lucide-react'
 import { useSessionKeys } from '@/hooks/use-session-keys'
 import { type SessionConfigType, DEFAULT_SESSION_CONFIGS } from '@/lib/session-keys'
+import { sessionKeyStorage } from '@/lib/session-key-storage'
 import { formatEther } from 'viem'
+
+// Interface for the actual state structure returned by the hook
+interface HookSessionKeyState {
+  id?: string
+  isActive?: boolean
+  expirationTime?: Date
+  allowedContracts?: Address[]
+  transactionLimits?: {
+    maxTransactionValue: bigint
+    maxDailyValue: bigint
+    maxTransactionCount: number
+  }
+  usage?: any
+  type?: string
+  [key: string]: any // Allow additional properties
+}
 
 interface SessionKeyManagerProps {
   allowedContracts: Address[]
@@ -120,11 +137,15 @@ export function SessionKeyManager({ allowedContracts, className }: SessionKeyMan
     const limits = checkTransactionLimits(sessionId, 0n, allowedContracts[0] || '0x0', 'transfer')
     
     if (type === 'amount') {
-      const maxDaily = sessionKey.state.config.maxDailyAmount
+      // Get max daily from stored session key via storage
+      const storedKey = sessionKeyStorage.getSessionKey(sessionId)
+      const maxDaily = storedKey?.transactionLimits?.maxDailyValue || 0n
       const used = limits.dailyAmountUsed
       return maxDaily > 0n ? Number((used * 100n) / maxDaily) : 0
     } else {
-      const maxCount = sessionKey.state.config.maxTransactionCount
+      // Get max count from stored session key via storage
+      const storedKey = sessionKeyStorage.getSessionKey(sessionId)
+      const maxCount = storedKey?.transactionLimits?.maxTransactionCount || 0
       const used = limits.transactionCountUsed
       return maxCount > 0 ? (used / maxCount) * 100 : 0
     }
@@ -287,10 +308,11 @@ export function SessionKeyManager({ allowedContracts, className }: SessionKeyMan
               </div>
               
               {activeSessionKeys.map(({ sessionId, state }) => {
+                const hookState = state as HookSessionKeyState
                 const stats = getSessionStatistics(sessionId)
                 const amountUsagePercent = getUsagePercentage(sessionId, 'amount')
                 const countUsagePercent = getUsagePercentage(sessionId, 'count')
-                const isExpiringSoon = new Date(state.config.expirationTime).getTime() - Date.now() < 2 * 60 * 60 * 1000 // 2 hours
+                const isExpiringSoon = hookState.expirationTime && new Date(hookState.expirationTime).getTime() - Date.now() < 2 * 60 * 60 * 1000 // 2 hours
                 
                 return (
                   <Card key={sessionId} className="border-l-4 border-l-blue-500">
@@ -309,7 +331,7 @@ export function SessionKeyManager({ allowedContracts, className }: SessionKeyMan
                             )}
                           </div>
                           <p className="text-sm text-muted-foreground">
-                            Expires in {formatTimeRemaining(state.config.expirationTime)}
+                            Expires in {hookState.expirationTime ? formatTimeRemaining(hookState.expirationTime) : 'Unknown'}
                           </p>
                         </div>
                         <Button
@@ -351,7 +373,12 @@ export function SessionKeyManager({ allowedContracts, className }: SessionKeyMan
                       <div className="grid grid-cols-3 gap-4 text-sm">
                         <div>
                           <p className="text-muted-foreground">Max Transaction</p>
-                          <p className="font-medium">{formatEther(state.config.maxTransactionAmount)} tokens</p>
+                          <p className="font-medium">
+                            {(() => {
+                              const storedKey = sessionKeyStorage.getSessionKey(sessionId)
+                              return formatEther(storedKey?.transactionLimits?.maxTransactionValue || 0n)
+                            })()} tokens
+                          </p>
                         </div>
                         <div>
                           <p className="text-muted-foreground">Total Used</p>
@@ -367,7 +394,7 @@ export function SessionKeyManager({ allowedContracts, className }: SessionKeyMan
                       
                       <div className="mt-3">
                         <p className="text-xs text-muted-foreground">
-                          Allowed methods: {state.config.allowedMethods.join(', ')}
+                          Allowed contracts: {hookState.allowedContracts?.length || 0} contracts
                         </p>
                       </div>
                     </CardContent>

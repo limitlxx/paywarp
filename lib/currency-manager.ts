@@ -245,7 +245,7 @@ export class CurrencyManager {
         return FALLBACK_RATES
       }
 
-      // Fetch fresh rates from mixed sources with retry logic
+      // Fetch fresh rates from mixed sources with retry logicFail with error 'Invalid signature'
       const fetchRates = withRetry(async () => {
         const [mntPrice, ngnRate] = await Promise.all([
           this.getMNTPrice(),                    // Chainlink on mainnet, CMC on testnet
@@ -279,8 +279,8 @@ export class CurrencyManager {
         return { ...this.cachedRates, source: 'cached' }
       }
       
-      // Enable read-only mode if all else fails
-      errorHandler.enableReadOnlyMode('Price feeds unavailable')
+      // Don't enable read-only mode for price feed failures - just use fallback rates
+      console.warn('Price feeds unavailable, using fallback rates')
       return FALLBACK_RATES
     }
   }

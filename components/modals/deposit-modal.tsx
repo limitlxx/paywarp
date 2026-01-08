@@ -15,10 +15,11 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Wallet, CreditCard, Droplet, ArrowRight, CheckCircle2, Loader2, Info, TrendingUp } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
-import { useBlockchainBuckets } from "@/hooks/use-blockchain-buckets"
+import { useBlockchainBuckets } from "@/hooks/use-blockchain-buckets-improved"
 import { useBuckets } from "@/hooks/use-buckets"
 import { useWallet } from "@/hooks/use-wallet"
 import { useToast } from "@/hooks/use-toast"
+import { useEnhancedDeposit } from "@/hooks/use-enhanced-deposit"
 import { PaystackDeposit } from "@/components/paystack-deposit"
 import type { BucketType } from "@/lib/types"
 
@@ -35,10 +36,26 @@ export function DepositModal({ open, onOpenChange, bucketId = "auto-split", buck
   const [method, setMethod] = useState<"paystack" | "wallet" | "faucet">("paystack")
   const [enableRWAConversion, setEnableRWAConversion] = useState(true)
   const [rwaTokenType, setRwaTokenType] = useState<"USDY" | "mUSD">("USDY")
-  const { depositAndSplit, isLoading, error } = useBlockchainBuckets()
+  const [email, setEmail] = useState("")
+  const { depositAndSplit, isLoading: blockchainLoading, error: blockchainError } = useBlockchainBuckets()
   const { convertToRWA } = useBuckets()
   const { isConnected, connect } = useWallet()
   const { toast } = useToast()
+  const {
+    depositFromWallet,
+    depositFromPaystack,
+    depositFromFaucet,
+    currentPaystackSession,
+    verifyPaystackPayment,
+    isLoading: depositLoading,
+    error: depositError,
+    usdcBalance,
+    needsSplitConfig,
+    clearError
+  } = useEnhancedDeposit()
+
+  const isLoading = blockchainLoading || depositLoading
+  const error = blockchainError || depositError
 
   const isSpendable = bucketId === "spendable"
   const isAutoSplit = bucketId === "auto-split"
@@ -70,18 +87,23 @@ export function DepositModal({ open, onOpenChange, bucketId = "auto-split", buck
       
       try {
         const numAmount = Number(amount)
+        let result
         
-        if (method === "wallet" && isAutoSplit) {
-          await depositAndSplit(numAmount)
-        } else {
-          await new Promise(resolve => setTimeout(resolve, 2000))
-          toast({
-            title: "Deposit Successful",
-            description: `Successfully deposited ${numAmount.toLocaleString()} via ${method}.`,
-          })
+        if (method === "wallet") {
+          if (isAutoSplit) {
+            result = await depositFromWallet(numAmount)
+          } else {
+            result = await depositFromWallet(numAmount, bucketId as string)
+          }
+        } else if (method === "faucet") {
+          result = await depositFromFaucet(numAmount)
         }
         
-        setStep("success")
+        if (result?.success) {
+          setStep("success")
+        } else {
+          throw new Error(result?.error || 'Deposit failed')
+        }
       } catch (err) {
         const errorMessage = err instanceof Error ? err.message : 'Deposit failed'
         toast({
@@ -97,6 +119,8 @@ export function DepositModal({ open, onOpenChange, bucketId = "auto-split", buck
   const reset = () => {
     setStep("amount")
     setAmount("")
+    setEmail("")
+    clearError()
     onOpenChange(false)
   }
 
@@ -143,6 +167,45 @@ export function DepositModal({ open, onOpenChange, bucketId = "auto-split", buck
                   />
                 </div>
               </div>
+              
+              {/* Email field for Paystack */}
+              {method === "paystack" && (
+                <div className="space-y-2">
+                  <Label htmlFor="email" className="text-purple-300">
+                    Email Address
+                  </Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="your@email.com"
+                    className="glass border-purple-500/30 focus:border-purple-500 bg-transparent"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Required for Paystack payment processing
+                  </p>
+                </div>
+              )}
+              
+              {/* USDC Balance Display */}
+              {isConnected && (
+                <div className="p-3 rounded-xl bg-blue-500/5 border border-blue-500/10 flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Your USDC Balance:</span>
+                  <span className="text-sm font-bold text-foreground">{usdcBalance.toFixed(2)} USDC</span>
+                </div>
+              )}
+              
+              {/* Split Configuration Warning */}
+              {needsSplitConfig && isAutoSplit && (
+                <div className="p-3 rounded-xl bg-orange-500/5 border border-orange-500/10 flex gap-3">
+                  <Info className="w-5 h-5 text-orange-400 shrink-0" />
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    You need to configure your split percentages before making a deposit. Visit Settings to set up your bucket allocation.
+                  </p>
+                </div>
+              )}
+              
               {isAutoSplit && (
                 <div className="p-3 rounded-xl bg-purple-500/5 border border-purple-500/10 flex gap-3">
                   <Info className="w-5 h-5 text-purple-400 shrink-0" />

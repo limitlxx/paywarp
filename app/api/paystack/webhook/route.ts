@@ -1,6 +1,6 @@
 /**
- * Paystack webhook handler
- * Processes payment events and triggers wallet funding + auto-split
+ * Paystack Webhook Handler
+ * Processes payment confirmations and triggers auto-split
  */
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -13,20 +13,15 @@ export async function POST(request: NextRequest) {
     const signature = request.headers.get('x-paystack-signature')
     
     if (!signature) {
-      return NextResponse.json(
-        { error: 'Missing signature' },
-        { status: 400 }
-      )
+      console.error('Missing Paystack signature')
+      return NextResponse.json({ error: 'Missing signature' }, { status: 400 })
     }
 
     // Verify webhook signature
     const webhookSecret = process.env.PAYSTACK_WEBHOOK_SECRET
     if (!webhookSecret) {
-      console.error('PAYSTACK_WEBHOOK_SECRET not configured')
-      return NextResponse.json(
-        { error: 'Webhook secret not configured' },
-        { status: 500 }
-      )
+      console.error('Missing webhook secret')
+      return NextResponse.json({ error: 'Configuration error' }, { status: 500 })
     }
 
     const hash = crypto
@@ -35,57 +30,52 @@ export async function POST(request: NextRequest) {
       .digest('hex')
 
     if (hash !== signature) {
-      return NextResponse.json(
-        { error: 'Invalid signature' },
-        { status: 401 }
-      )
+      console.error('Invalid webhook signature')
+      return NextResponse.json({ error: 'Invalid signature' }, { status: 400 })
     }
 
     // Parse webhook event
     const event: PaystackWebhookEvent = JSON.parse(body)
-    
     console.log('Received Paystack webhook:', event.event, event.data.reference)
 
     // Process the event
-    const depositRecord = await getPaystackService().processWebhookEvent(event)
-    
+    const paystackService = getPaystackService()
+    const depositRecord = await paystackService.processWebhookEvent(event)
+
     if (depositRecord) {
       console.log('Deposit record created:', depositRecord.id)
       
-      // In a production app, you would:
-      // 1. Save the deposit record to your database
-      // 2. Emit an event to trigger auto-split in the frontend
-      // 3. Send notifications to the user
+      // In a production system, you might want to:
+      // 1. Store the deposit record in a database
+      // 2. Send notifications to the user
+      // 3. Update analytics/metrics
       
-      return NextResponse.json({
-        success: true,
-        depositId: depositRecord.id,
-        message: 'Webhook processed successfully'
+      return NextResponse.json({ 
+        success: true, 
+        depositId: depositRecord.id 
       })
+    } else {
+      console.log('No deposit record created for event:', event.event)
+      return NextResponse.json({ success: true, message: 'Event processed' })
     }
-
-    return NextResponse.json({
-      success: true,
-      message: 'Webhook received but no action taken'
-    })
-
   } catch (error) {
     console.error('Webhook processing error:', error)
-    
     return NextResponse.json(
-      { 
-        error: 'Webhook processing failed',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      },
+      { error: 'Webhook processing failed' }, 
       { status: 500 }
     )
   }
 }
 
-// Only allow POST requests
+// Handle other HTTP methods
 export async function GET() {
-  return NextResponse.json(
-    { error: 'Method not allowed' },
-    { status: 405 }
-  )
+  return NextResponse.json({ message: 'Paystack webhook endpoint' })
+}
+
+export async function PUT() {
+  return NextResponse.json({ error: 'Method not allowed' }, { status: 405 })
+}
+
+export async function DELETE() {
+  return NextResponse.json({ error: 'Method not allowed' }, { status: 405 })
 }

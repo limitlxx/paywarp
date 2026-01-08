@@ -62,20 +62,6 @@ export function BucketCard({
   // Mobile and performance optimizations
   const capabilities = useMobileCapabilities()
   const { isTransactionLoading } = useTransactionLoading()
-  const { currentPercentage, shouldUseGPU } = useOptimizedLiquidFill(percentage, color)
-  const { bubbleCount, animationSpeed } = useOptimizedBubbles(
-    isYielding || id === "instant" || id === "spendable" || id === "billings",
-    getBubbleType()
-  )
-
-  // Optimize touch interactions on mobile
-  useOptimizedTouch(cardRef)
-
-  // Performance-aware animation configuration
-  const animationConfig = {
-    duration: capabilities.performanceLevel === 'low' ? 150 : 300,
-    reducedMotion: capabilities.performanceLevel === 'low',
-  }
 
   // <CHANGE> Updated bubble type mapping to include expense type for billings
   const getBubbleType = () => {
@@ -109,6 +95,21 @@ export function BucketCard({
       default:
         return "normal"
     }
+  }
+
+  const { currentPercentage, shouldUseGPU } = useOptimizedLiquidFill(percentage, color)
+  const { bubbleCount, animationSpeed } = useOptimizedBubbles(
+    isYielding || id === "instant" || id === "spendable" || id === "billings",
+    getBubbleType()
+  )
+
+  // Optimize touch interactions on mobile
+  useOptimizedTouch(cardRef)
+
+  // Performance-aware animation configuration
+  const animationConfig = {
+    duration: capabilities.performanceLevel === 'low' ? 150 : 300,
+    reducedMotion: capabilities.performanceLevel === 'low',
   }
 
   const handleDepositClick = (e: React.MouseEvent) => {
@@ -154,8 +155,6 @@ export function BucketCard({
             active={bubbleCount > 0}
             type={getBubbleType()}
             color={color}
-            count={bubbleCount}
-            speed={animationSpeed}
           />
           <CardContent className="p-6">
             <div className="flex justify-between items-start mb-6">
@@ -189,8 +188,6 @@ export function BucketCard({
                 color={color} 
                 size={capabilities.screenSize === 'small' ? 70 : 80}
                 variant={getLiquidVariant()}
-                useGPU={shouldUseGPU}
-                reducedMotion={animationConfig.reducedMotion}
               />
             </div>
 

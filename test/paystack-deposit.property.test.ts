@@ -98,7 +98,7 @@ describe('Paystack Deposit Integrity Properties', () => {
           
           // Session should have reasonable expiry time (15 minutes)
           const now = new Date()
-          const expiryDiff = session!.expiresAt.getTime() - now.getTime()
+          const expiryDiff = session!.expiresAt - now.getTime()
           expect(expiryDiff).toBeGreaterThan(14 * 60 * 1000) // At least 14 minutes
           expect(expiryDiff).toBeLessThan(16 * 60 * 1000) // At most 16 minutes
         }

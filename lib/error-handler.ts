@@ -116,7 +116,7 @@ export class ErrorHandler {
   }
 
   /**
-   * Handle RPC endpoint failures with fallback
+   * Handle RPC endpoint failures with fallback and smart error detection
    */
   async handleRPCFailure<T>(
     primaryRPC: () => Promise<T>,
@@ -127,8 +127,28 @@ export class ErrorHandler {
     
     try {
       return await primaryRPC()
-    } catch (primaryError) {
-      console.warn('Primary RPC failed, trying fallbacks:', primaryError.message)
+    } catch (primaryError: unknown) {
+      const errorMessage = (primaryError as Error).message || String(primaryError)
+      console.warn('Primary RPC failed, trying fallbacks:', errorMessage)
+      
+      // Check for specific Alchemy free tier error
+      if (errorMessage.includes('Under the Free tier plan') && errorMessage.includes('eth_getLogs')) {
+        const blockRangeMatch = errorMessage.match(/\[([^,]+),\s*([^\]]+)\]/)
+        if (blockRangeMatch) {
+          throw new Error(`Block range too large for Alchemy free tier. Use range [${blockRangeMatch[1]}, ${blockRangeMatch[2]}] or smaller (max 10 blocks).`)
+        }
+        throw new Error('Block range too large for free tier. Please use smaller block ranges (max 10 blocks).')
+      }
+      
+      // Check for content size errors
+      if (errorMessage.includes('413') || errorMessage.includes('Content Too Large') || errorMessage.includes('request entity too large')) {
+        throw new Error('Request too large for RPC endpoint. Try reducing block range or query parameters.')
+      }
+      
+      // Check for rate limiting
+      if (errorMessage.includes('429') || errorMessage.includes('rate limit') || errorMessage.includes('too many requests')) {
+        throw new Error('Rate limit exceeded. Please wait a moment before retrying.')
+      }
       
       for (let i = 0; i < fallbackRPCs.length; i++) {
         try {
@@ -141,8 +161,19 @@ export class ErrorHandler {
           })
           
           return result
-        } catch (fallbackError) {
-          console.warn(`Fallback RPC ${i + 1} failed:`, fallbackError.message)
+        } catch (fallbackError: unknown) {
+          const fallbackMessage = (fallbackError as Error).message || String(fallbackError)
+          console.warn(`Fallback RPC ${i + 1} failed:`, fallbackMessage)
+          
+          // Check for content too large errors on fallbacks
+          if (fallbackMessage.includes('413') || fallbackMessage.includes('Content Too Large')) {
+            console.warn(`Fallback RPC ${i + 1} also has content size limits`)
+          }
+          
+          // Check for Alchemy errors on fallbacks
+          if (fallbackMessage.includes('Under the Free tier plan')) {
+            console.warn(`Fallback RPC ${i + 1} also has block range limits`)
+          }
           
           if (i === fallbackRPCs.length - 1) {
             // All fallbacks failed
@@ -193,16 +224,12 @@ export class ErrorHandler {
     try {
       const data = await primaryFeed()
       return { data, isStale: false }
-    } catch (error) {
+    } catch (error: any) {
       console.warn('Price feed unavailable, using fallback data:', error.message)
       
-      toast({
-        title: "Using Cached Data",
-        description: "Live price data unavailable. Showing last known prices.",
-        variant: "default"
-      })
-
-      this.handleError(error, { ...context, action: 'price_feed_failure' })
+      // Don't show toast for price feed failures - they're not critical
+      // Just log the error silently and use fallback data
+      
       return { data: fallbackData, isStale: true }
     }
   }
@@ -211,6 +238,13 @@ export class ErrorHandler {
    * Enable read-only mode when critical services are down
    */
   enableReadOnlyMode(reason: string): void {
+    // Only enable read-only mode for truly critical failures
+    // Price feed failures should not trigger read-only mode
+    if (reason.toLowerCase().includes('price') || reason.toLowerCase().includes('feed')) {
+      console.warn('Price feed issue detected, but not enabling read-only mode:', reason)
+      return
+    }
+
     toast({
       title: "Read-Only Mode",
       description: `Some features are temporarily unavailable: ${reason}`,
@@ -239,6 +273,12 @@ export class ErrorHandler {
       const stored = localStorage.getItem('paywarp_readonly_mode')
       if (stored) {
         const parsed = JSON.parse(stored)
+        
+        // Auto-clear price-feed related read-only modes
+        if (parsed.reason?.toLowerCase().includes('price')) {
+          localStorage.removeItem('paywarp_readonly_mode')
+          return { enabled: false }
+        }
         
         // Auto-disable after 1 hour
         const timestamp = new Date(parsed.timestamp)

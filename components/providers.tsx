@@ -6,6 +6,7 @@ import { Web3Providers } from "@/components/web3-providers"
 import { NetworkProvider } from "@/hooks/use-network"
 import { WalletProvider } from "@/hooks/use-wallet"
 import { CurrencyProvider } from "@/hooks/use-currency"
+import { NavigationProvider } from "@/components/navigation-provider"
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
@@ -18,7 +19,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
       <Web3Providers>
         <NetworkProvider>
           <WalletProvider>
-            <CurrencyProvider>{children}</CurrencyProvider>
+            <CurrencyProvider>
+              <NavigationProvider>{children}</NavigationProvider>
+            </CurrencyProvider>
           </WalletProvider>
         </NetworkProvider>
       </Web3Providers>

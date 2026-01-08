@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { serverFaucetService } from '@/lib/server-faucet-service'
+import { getDepositService } from '@/lib/deposit-service'
 import { isAddress } from 'viem'
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { tokenSymbol, recipientAddress } = body
+    const { tokenSymbol, recipientAddress, amount } = body
 
     // Validate input
     if (!tokenSymbol || !['MNT', 'USDC'].includes(tokenSymbol)) {
@@ -22,7 +23,34 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Process faucet request
+    // For USDC, use the deposit service which can mint tokens
+    if (tokenSymbol === 'USDC') {
+      try {
+        const depositService = getDepositService()
+        const result = await depositService.depositFromFaucet(recipientAddress, amount || 100)
+        
+        if (result.success) {
+          return NextResponse.json({
+            success: true,
+            transactionHash: result.transactionHash,
+            amount: (amount || 100).toString()
+          })
+        } else {
+          return NextResponse.json(
+            { error: result.error },
+            { status: 400 }
+          )
+        }
+      } catch (error) {
+        console.error('USDC faucet error:', error)
+        return NextResponse.json(
+          { error: 'USDC faucet service unavailable' },
+          { status: 500 }
+        )
+      }
+    }
+
+    // For MNT, use the original faucet service
     const result = await serverFaucetService.requestTokens({
       tokenSymbol,
       recipientAddress: recipientAddress as `0x${string}`

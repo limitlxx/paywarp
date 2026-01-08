@@ -1,6 +1,6 @@
 "use client"
 
-import { useWallet } from "@/hooks/use-wallet"
+import { useWallet } from "@/hooks/use-wallet.tsx"
 import { Button } from "@/components/ui/button"
 import { Zap, LogOut } from "lucide-react"
 import Link from "next/link"

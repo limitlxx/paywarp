@@ -1,14 +1,19 @@
 import type React from "react"
 import type { Metadata } from "next"
-import { Inter } from "next/font/google"
+import { Outfit } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import "./globals.css"
 import { Providers } from "@/components/providers"
 import { ErrorBoundary } from "@/components/error-boundary"
 import { ReadOnlyBanner } from "@/components/read-only-banner"
 import { FloatingPerformanceIndicator } from "@/components/performance-monitor"
+import { WarpLoading } from "@/components/warp-loading"
 
-const inter = Inter({ subsets: ["latin"] })
+const outfit = Outfit({ 
+  subsets: ["latin"],
+  display: 'swap',
+  variable: '--font-outfit'
+})
 
 export const metadata: Metadata = {
   title: "PayWarp - DeFi Budgeting & Payroll on Mantle L2",
@@ -41,7 +46,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark">
-      <body className={`${inter.className} font-sans antialiased bg-black text-white`}>
+      <body className={`${outfit.className} font-sans antialiased bg-black text-white`}>
         <ErrorBoundary>
           <Providers>
             <ReadOnlyBanner />

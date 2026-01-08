@@ -311,7 +311,7 @@ export class RPCProvider {
       try {
         await this.checkHealth()
       } catch (error) {
-        console.warn('Health check failed:', error)
+        console.warn('Health check failed:', (error as Error).message || error)
       }
     }, 2 * 60 * 1000)
   }

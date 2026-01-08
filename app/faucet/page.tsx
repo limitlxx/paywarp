@@ -1,14 +1,13 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { BottomNav } from "@/components/bottom-nav"
 import { SimpleHeader } from "@/components/simple-header"
-import { AuthGuard } from "@/components/auth-guard"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Droplet, Coins, ArrowRight, CheckCircle2, Loader2, Clock, AlertTriangle, ExternalLink } from "lucide-react"
+import { Droplet, Coins, ArrowRight, CheckCircle2, Loader2, Clock, AlertTriangle, ExternalLink, ArrowLeft } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
+import { useRouter } from "next/navigation"
 import { useFaucet } from "@/hooks/use-faucet"
 import { useWallet } from "@/hooks/use-wallet"
 import { useNetwork } from "@/hooks/use-network"
@@ -31,6 +30,7 @@ const tokens = [
 ]
 
 export default function FaucetPage() {
+  const router = useRouter()
   const { isConnected, connect, address } = useWallet()
   const { isTestnet, switchToTestnet, currentNetwork } = useNetwork()
   const {
@@ -41,6 +41,7 @@ export default function FaucetPage() {
     claimStatus,
     transactionHashes,
     isLoading,
+    isTokenLoading,
     error,
     clearError
   } = useFaucet()
@@ -108,19 +109,31 @@ export default function FaucetPage() {
   }
 
   return (
-    <AuthGuard>
-      <div className="min-h-screen gradient-bg pb-24">
-        <SimpleHeader />
+    <div className="min-h-screen gradient-bg">
+      <SimpleHeader />
 
-      <main className="p-4 sm:p-6 lg:p-8">
-        <div className="max-w-4xl mx-auto space-y-8">
-          <div className="space-y-2">
-            <h1 className="text-3xl font-bold text-foreground flex items-center gap-2">
-              <Droplet className="w-8 h-8 text-purple-400" />
-              Token Faucet
-            </h1>
-            <p className="text-muted-foreground">Get testnet tokens to explore PayWarp features</p>
-          </div>
+    <main className="p-4 sm:p-6 lg:p-8">
+      <div className="max-w-4xl mx-auto space-y-8">
+        {/* Back Button */}
+        <div className="flex items-center gap-4">
+          <Button
+            onClick={() => router.back()}
+            variant="outline"
+            size="sm"
+            className="glass-card border-purple-500/30 text-purple-400 hover:bg-purple-500/10 gap-2 bg-transparent"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back
+          </Button>
+        </div>
+
+        <div className="space-y-2">
+          <h1 className="text-3xl font-bold text-foreground flex items-center gap-2">
+            <Droplet className="w-8 h-8 text-purple-400" />
+            Token Faucet
+          </h1>
+          <p className="text-muted-foreground">Get testnet tokens to explore PayWarp features</p>
+        </div>
 
           {/* Network and Connection Status */}
           {!isConnected && (
@@ -242,10 +255,10 @@ export default function FaucetPage() {
                       {tokenStatus === 'available' && isFaucetAvailable && (
                         <Button
                           onClick={() => handleClaim(token.symbol)}
-                          disabled={isLoading}
+                          disabled={isTokenLoading(token.symbol)}
                           className="w-full h-12 gradient-primary text-white border-0 font-bold text-lg group/btn"
                         >
-                          {isLoading ? (
+                          {isTokenLoading(token.symbol) ? (
                             <>
                               <Loader2 className="w-5 h-5 animate-spin mr-2" />
                               Claiming...
@@ -302,9 +315,6 @@ export default function FaucetPage() {
           </Card>
         </div>
       </main>
-
-      <BottomNav />
     </div>
-  </AuthGuard>
   )
 }

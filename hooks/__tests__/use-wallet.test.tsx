@@ -88,7 +88,7 @@ vi.mock('@tanstack/react-query', () => ({
 }))
 
 // Import components after mocking
-import { WalletProvider, useWallet } from '../use-wallet'
+import { WalletProvider, useWallet } from '../use-wallet.tsx'
 
 // Test wrapper component
 function TestWrapper({ children }: { children: React.ReactNode }) {

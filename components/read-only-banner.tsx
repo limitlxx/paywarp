@@ -19,7 +19,13 @@ export function ReadOnlyBanner() {
     const checkReadOnlyMode = () => {
       const state = errorHandler.isReadOnlyMode()
       setReadOnlyState(state)
-      setIsVisible(state.enabled)
+      
+      // Don't show banner for price feed issues - they're not critical
+      if (state.enabled && state.reason?.toLowerCase().includes('price')) {
+        setIsVisible(false)
+      } else {
+        setIsVisible(state.enabled)
+      }
     }
 
     checkReadOnlyMode()
@@ -32,6 +38,20 @@ export function ReadOnlyBanner() {
 
   const handleRetry = async () => {
     try {
+      // Clear any price-feed related read-only mode
+      if (typeof window !== 'undefined') {
+        const stored = localStorage.getItem('paywarp_readonly_mode')
+        if (stored) {
+          const parsed = JSON.parse(stored)
+          if (parsed.reason?.toLowerCase().includes('price')) {
+            localStorage.removeItem('paywarp_readonly_mode')
+            setReadOnlyState({ enabled: false })
+            setIsVisible(false)
+            return
+          }
+        }
+      }
+      
       // Try to disable read-only mode
       errorHandler.disableReadOnlyMode()
       setReadOnlyState({ enabled: false })
@@ -110,17 +130,18 @@ export function ServiceStatusIndicator() {
         // Check if in read-only mode
         const readOnly = errorHandler.isReadOnlyMode()
         
-        if (readOnly.enabled) {
+        if (readOnly.enabled && !readOnly.reason?.toLowerCase().includes('price')) {
+          // Only show degraded status for non-price-feed issues
           setStatus({
             rpc: 'poor',
             contracts: 'unavailable',
-            priceFeeds: 'stale'
+            priceFeeds: 'cached' // Price feeds can still work with cached data
           })
         } else {
           setStatus({
             rpc: 'good',
             contracts: 'available',
-            priceFeeds: 'live'
+            priceFeeds: readOnly.reason?.toLowerCase().includes('price') ? 'cached' : 'live'
           })
         }
       } catch (error) {

@@ -26,7 +26,7 @@ export interface DepositRecord {
   cryptoAmount: number
   cryptoToken: 'USDC'
   exchangeRate: number
-  status: 'completed' | 'pending' | 'failed' | 'refunded'
+  status: 'success' | 'pending' | 'failed' | 'refunded'
   timestamp: Date
   userAddress: string
   autoSplitTriggered?: boolean
@@ -117,11 +117,17 @@ export class PaystackService {
       metadata: {
         userAddress,
         cryptoAmount,
+        email, // Include email in metadata
         custom_fields: [
           {
             display_name: "Wallet Address",
             variable_name: "wallet_address",
             value: userAddress
+          },
+          {
+            display_name: "Email Address",
+            variable_name: "email_address", 
+            value: email
           }
         ]
       }
@@ -326,7 +332,7 @@ export class PaystackService {
           cryptoAmount,
           cryptoToken: 'USDC',
           exchangeRate: currency === 'USD' ? 1 : 1500, // Mock rate
-          status: 'completed',
+          status: 'success',
           timestamp: new Date(),
           userAddress,
           autoSplitTriggered: false // Will be set to true when auto-split is triggered
@@ -411,8 +417,16 @@ export function getPaystackService(): PaystackService {
     }
 
     // Validate required configuration
-    if (!config.managedWalletPrivateKey || config.managedWalletPrivateKey.length < 64) {
-      throw new Error('Invalid or missing MANAGED_WALLET_PRIVATE_KEY environment variable')
+    if (!config.managedWalletPrivateKey) {
+      throw new Error('MANAGED_WALLET_PRIVATE_KEY environment variable is required')
+    }
+    
+    if (!config.managedWalletPrivateKey.startsWith('0x')) {
+      throw new Error('MANAGED_WALLET_PRIVATE_KEY must start with 0x')
+    }
+    
+    if (config.managedWalletPrivateKey.length !== 66) {
+      throw new Error('MANAGED_WALLET_PRIVATE_KEY must be 66 characters long (including 0x prefix)')
     }
 
     _paystackService = new PaystackService(config)
@@ -420,5 +434,5 @@ export function getPaystackService(): PaystackService {
   return _paystackService
 }
 
-// For backward compatibility
-export const paystackService = typeof window !== 'undefined' ? getPaystackService() : null
+// For backward compatibility - lazy initialization only when needed
+export const paystackService = null // Don't initialize at module load
