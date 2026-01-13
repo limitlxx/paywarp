@@ -6,6 +6,10 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  // Disable static optimization for pages with dynamic content
+  experimental: {
+    missingSuspenseWithCSRBailout: false,
+  },
   // Add empty turbopack config to silence the error
   turbopack: {},
   webpack: (config, { isServer }) => {
@@ -64,6 +68,23 @@ const nextConfig = {
       ...config.resolve.alias,
       'thread-stream/test': false,
       'thread-stream/bench.js': false,
+      '@react-native-async-storage/async-storage': false,
+      'pino-pretty': false,
+    };
+
+    // Add fallback for Node.js modules not available in browser
+    config.resolve.fallback = {
+      ...config.resolve.fallback,
+      fs: false,
+      net: false,
+      tls: false,
+      crypto: false,
+      stream: false,
+      http: false,
+      https: false,
+      zlib: false,
+      path: false,
+      os: false,
     };
 
     // Ignore specific file extensions that cause issues

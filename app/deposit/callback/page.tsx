@@ -1,13 +1,13 @@
 "use client"
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { CheckCircle2, XCircle, Loader2 } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 
-export default function DepositCallbackPage() {
+function DepositCallbackContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { toast } = useToast()
@@ -160,5 +160,22 @@ export default function DepositCallbackPage() {
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+export default function DepositCallbackPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gradient-to-br from-purple-900/20 via-black to-blue-900/20 flex items-center justify-center p-4">
+        <Card className="w-full max-w-md glass border-purple-500/20 bg-black/90 backdrop-blur-2xl">
+          <CardContent className="text-center py-12">
+            <Loader2 className="w-8 h-8 animate-spin text-purple-400 mx-auto mb-4" />
+            <p className="text-muted-foreground">Loading payment details...</p>
+          </CardContent>
+        </Card>
+      </div>
+    }>
+      <DepositCallbackContent />
+    </Suspense>
   )
 }
