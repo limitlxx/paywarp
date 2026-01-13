@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { useWallet } from "@/hooks/use-wallet.tsx"
+import { useWallet } from "@/hooks/use-wallet"
 import { useUserRegistration } from "@/lib/user-registration"
 import { Loader2 } from "lucide-react"
 

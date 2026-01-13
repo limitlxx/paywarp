@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Button } from "@/components/ui/button"
 import { AnimatedBubbles } from "@/components/animated-bubbles"
+import WalletLevelStatus from "@/components/wallet-level-status"
 import {
   X,
   Share2,
@@ -376,6 +377,11 @@ export default function WrappedReportViewer({
             )
           )}
         </div>
+      </div>
+
+      {/* Wallet Level Status - NEW */}
+      <div className="absolute top-20 left-1/2 transform -translate-x-1/2 z-40">
+        <WalletLevelStatus reportsData={{ reports, hasActivity, isLoading, error }} />
       </div>
 
       {/* Main Content Area */}

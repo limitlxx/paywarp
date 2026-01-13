@@ -10,7 +10,7 @@ export interface PaystackSessionData {
   userAddress: string
   email: string
   paystackUrl: string
-  status: 'pending' | 'processing' | 'success' | 'failed'
+  status: 'pending' | 'processing' | 'success' | 'failed' | 'expired'
   createdAt: number
   completedAt?: number
   expiresAt: number
@@ -62,7 +62,8 @@ export class PaystackStorage {
       // Check if session has expired
       if (Date.now() > session.expiresAt && session.status === 'pending') {
         session.status = 'expired'
-        this.updateSession(session)
+        // Update directly to avoid recursion
+        localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify(session))
       }
       
       return session

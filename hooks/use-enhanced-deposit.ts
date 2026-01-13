@@ -275,25 +275,56 @@ export function useEnhancedDeposit(): UseEnhancedDepositReturn {
     setError(null)
 
     try {
+      console.log('🔍 Verifying Paystack payment...', reference)
+      
       const depositService = getDepositService()
+      
+      // Step 1: Verify payment and get USDC sent to wallet
       const result = await depositService.completePaystackDeposit(reference, address)
       
       if (result.success) {
-        if (result.depositRecord?.autoSplitTriggered) {
-          toast({
-            title: 'Payment Complete',
-            description: 'Your Paystack deposit has been processed and automatically split into buckets',
-          })
-        } else {
-          toast({
-            title: 'Payment Received',
-            description: 'USDC has been added to your wallet. Please complete the deposit by splitting into buckets.',
-          })
-        }
+        console.log('✅ Payment verified, USDC sent to wallet')
         
-        // Clear the session after successful completion
+        // Step 2: Clear the payment session immediately after USDC transfer
+        console.log('🧹 Clearing payment session...')
         PaystackStorage.clearSession()
         setCurrentPaystackSession(null)
+        
+        toast({
+          title: 'Payment Received',
+          description: 'USDC has been sent to your wallet. Waiting for balance confirmation...',
+        })
+        
+        // Step 3: Wait for wallet balance confirmation with polling
+        console.log('⏳ Waiting for wallet balance confirmation...')
+        const cryptoAmount = result.depositRecord?.cryptoAmount || 0
+        const balanceConfirmed = await waitForBalanceConfirmation(cryptoAmount)
+        
+        if (balanceConfirmed) {
+          console.log('✅ Balance confirmed, triggering depositAndSplit...')
+          
+          // Step 4: Call depositAndSplit after balance confirmation
+          const splitResult = await triggerDepositAndSplit(cryptoAmount)
+          
+          if (splitResult) {
+            toast({
+              title: 'Deposit Complete',
+              description: `Successfully deposited and split ${cryptoAmount} USDC into your buckets`,
+            })
+          } else {
+            toast({
+              title: 'Manual Action Required',
+              description: 'USDC received but auto-split failed. Please complete the deposit manually.',
+              variant: 'destructive'
+            })
+          }
+        } else {
+          toast({
+            title: 'Balance Confirmation Timeout',
+            description: 'USDC transfer may still be pending. Please check your wallet and complete deposit manually if needed.',
+            variant: 'destructive'
+          })
+        }
         
         // Refresh balances and user info
         await Promise.all([
@@ -305,7 +336,7 @@ export function useEnhancedDeposit(): UseEnhancedDepositReturn {
       } else {
         setError(result.error || 'Payment verification failed')
         
-        // Clear the session on failure too
+        // Clear the session on failure
         PaystackStorage.clearSession()
         setCurrentPaystackSession(null)
         
@@ -321,7 +352,7 @@ export function useEnhancedDeposit(): UseEnhancedDepositReturn {
       const errorMessage = err instanceof Error ? err.message : 'Payment verification failed'
       setError(errorMessage)
       
-      // Clear the session on error too
+      // Clear the session on error
       PaystackStorage.clearSession()
       setCurrentPaystackSession(null)
       
@@ -335,7 +366,93 @@ export function useEnhancedDeposit(): UseEnhancedDepositReturn {
     } finally {
       setIsLoading(false)
     }
-  }, [address, currentPaystackSession, toast, refreshBalances])
+  }, [address, toast, refreshBalances])
+
+  /**
+   * Wait for wallet balance confirmation with polling
+   */
+  const waitForBalanceConfirmation = useCallback(async (expectedAmount: number): Promise<boolean> => {
+    if (!address) return false
+
+    const depositService = getDepositService()
+    const maxAttempts = 30 // 30 attempts = 1 minute with 2-second intervals
+    let attempts = 0
+    
+    const initialBalance = await depositService.getUserUSDCBalance(address)
+    console.log(`💰 Initial balance: ${initialBalance} USDC, expecting increase of ${expectedAmount} USDC`)
+    
+    return new Promise((resolve) => {
+      const checkBalance = async () => {
+        attempts++
+        
+        try {
+          const currentBalance = await depositService.getUserUSDCBalance(address)
+          console.log(`💰 Balance check ${attempts}/${maxAttempts}: ${currentBalance} USDC`)
+          
+          // Check if balance increased by at least the expected amount (with small tolerance for rounding)
+          const balanceIncrease = currentBalance - initialBalance
+          const tolerance = 0.01 // 1 cent tolerance
+          
+          if (balanceIncrease >= (expectedAmount - tolerance)) {
+            console.log(`✅ Balance confirmed! Increase: ${balanceIncrease} USDC`)
+            resolve(true)
+            return
+          }
+          
+          if (attempts >= maxAttempts) {
+            console.log(`⏰ Balance confirmation timeout after ${attempts} attempts`)
+            resolve(false)
+            return
+          }
+          
+          // Continue polling
+          setTimeout(checkBalance, 2000) // Check every 2 seconds
+        } catch (error) {
+          console.error('Error checking balance:', error)
+          if (attempts >= maxAttempts) {
+            resolve(false)
+          } else {
+            setTimeout(checkBalance, 2000)
+          }
+        }
+      }
+      
+      // Start checking after a short delay to allow for transaction propagation
+      setTimeout(checkBalance, 1000)
+    })
+  }, [address])
+
+  /**
+   * Trigger depositAndSplit after balance confirmation
+   */
+  const triggerDepositAndSplit = useCallback(async (amount: number): Promise<boolean> => {
+    if (!address || !walletClient) {
+      console.error('Wallet not connected for depositAndSplit')
+      return false
+    }
+
+    try {
+      console.log(`🔄 Triggering depositAndSplit for ${amount} USDC...`)
+      
+      // Convert wagmi wallet client to ethers wallet for deposit service
+      const provider = new ethers.BrowserProvider(window.ethereum)
+      const signer = await provider.getSigner()
+      
+      const depositService = getDepositService()
+      const result = await depositService.depositFromWallet(signer as any, amount)
+      
+      if (result.success) {
+        console.log('✅ DepositAndSplit completed successfully:', result.transactionHash)
+        return true
+      } else {
+        console.error('❌ DepositAndSplit failed:', result.error)
+        return false
+      }
+    } catch (error) {
+      console.error('❌ Error in triggerDepositAndSplit:', error)
+      return false
+    }
+  }, [address, walletClient])
 
   /**
    * Deposit from faucet (mint USDC for testing)
@@ -351,10 +468,27 @@ export function useEnhancedDeposit(): UseEnhancedDepositReturn {
     setError(null)
 
     try {
-      const depositService = getDepositService()
-      const result = await depositService.depositFromFaucet(address, amount)
+      // Call the faucet API route instead of using the service directly
+      const response = await fetch('/api/faucet', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          tokenSymbol: 'USDC',
+          recipientAddress: address,
+          amount
+        })
+      })
+
+      const data = await response.json()
       
-      if (result.success) {
+      if (response.ok && data.success) {
+        const result: DepositResult = {
+          success: true,
+          transactionHash: data.transactionHash
+        }
+        
         toast({
           title: 'Faucet Successful',
           description: `Successfully received ${amount} USDC from faucet`,
@@ -365,16 +499,18 @@ export function useEnhancedDeposit(): UseEnhancedDepositReturn {
           refreshBalances(),
           refreshUserInfo()
         ])
+        
+        return result
       } else {
-        setError(result.error || 'Faucet request failed')
+        const error = data.error || 'Faucet request failed'
+        setError(error)
         toast({
           title: 'Faucet Failed',
-          description: result.error || 'Faucet request failed',
+          description: error,
           variant: 'destructive'
         })
+        return { success: false, error }
       }
-      
-      return result
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Faucet request failed'
       setError(errorMessage)

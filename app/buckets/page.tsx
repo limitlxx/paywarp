@@ -11,7 +11,7 @@ import { TransferModal } from "@/components/modals/transfer-modal"
 import { useState, useEffect, useMemo } from "react"
 import { Button } from "@/components/ui/button"
 import { useOptimizedBlockchainBuckets } from "@/hooks/use-optimized-blockchain-buckets"
-import { useWallet } from "@/hooks/use-wallet.tsx"
+import { useWallet } from "@/hooks/use-wallet"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useMobileCapabilities, useMobileRenderOptimization, useMobilePerformanceMonitoring } from "@/lib/mobile-optimization"
 import { useLoadingManager } from "@/lib/loading-state-manager"
@@ -98,6 +98,12 @@ export default function BucketsPage() {
       color: "#EF4444",
       icon: Droplet,
       description: "Automated expenses & bills",
+      apy: undefined,
+      lastUpdated: new Date(),
+      usdyBalance: undefined,
+      musdBalance: undefined,
+      totalYieldEarned: undefined,
+      currentRWAValue: undefined,
     },
     {
       id: "savings" as const,
@@ -108,6 +114,12 @@ export default function BucketsPage() {
       icon: PiggyBank,
       isYielding: true,
       description: "Long-term goal oriented funds",
+      apy: 4.5,
+      lastUpdated: new Date(),
+      usdyBalance: undefined,
+      musdBalance: undefined,
+      totalYieldEarned: undefined,
+      currentRWAValue: undefined,
     },
     {
       id: "growth" as const,
@@ -118,6 +130,12 @@ export default function BucketsPage() {
       icon: TrendingUp,
       isYielding: true,
       description: "DeFi yield optimization",
+      apy: 12.8,
+      lastUpdated: new Date(),
+      usdyBalance: undefined,
+      musdBalance: undefined,
+      totalYieldEarned: undefined,
+      currentRWAValue: undefined,
     },
     {
       id: "instant" as const,
@@ -127,6 +145,12 @@ export default function BucketsPage() {
       color: "#22C55E",
       icon: Zap,
       description: "Team payroll & salaries",
+      apy: 2.5,
+      lastUpdated: new Date(),
+      usdyBalance: undefined,
+      musdBalance: undefined,
+      totalYieldEarned: undefined,
+      currentRWAValue: undefined,
     },
     {
       id: "spendable" as const,
@@ -136,6 +160,12 @@ export default function BucketsPage() {
       color: "#94A3B8",
       icon: Wallet,
       description: "Available for immediate use",
+      apy: undefined,
+      lastUpdated: new Date(),
+      usdyBalance: undefined,
+      musdBalance: undefined,
+      totalYieldEarned: undefined,
+      currentRWAValue: undefined,
     },
   ], [isConnected])
 

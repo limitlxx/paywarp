@@ -135,13 +135,14 @@ export class TransactionBatcher {
             const transaction = transactions[i]
             const result = results[i]
             
-            if (result.success) {
+            if (result.success && result.hash) {
               transaction.resolve(result.hash)
               successful.push(transaction)
               totalGasUsed += result.gasUsed || BigInt(0)
             } else {
-              transaction.reject(result.error)
-              failed.push({ transaction, error: result.error })
+              const error = result.error || new Error('Transaction succeeded but no hash returned')
+              transaction.reject(error)
+              failed.push({ transaction, error })
             }
           }
         } catch (error) {

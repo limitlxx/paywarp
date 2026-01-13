@@ -28,3 +28,8 @@ next-env.d.ts
 
 .kiro
 /specs
+/server
+/broadcast
+/cache/deployments
+/scripts
+test*.js

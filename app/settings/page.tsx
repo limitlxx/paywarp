@@ -22,10 +22,11 @@ import {
 import { CurrencyDemo } from "@/components/currency-demo"
 import { SessionKeyManager } from "@/components/session-key-manager"
 import { TokenAllowanceManager } from "@/components/token-allowance-manager"
-import { ShieldCheck, Percent, Bell, DollarSign, Key, Save, AlertTriangle, CheckCircle, Loader2, Lightbulb, TrendingUp } from "lucide-react"
+import { ShieldCheck, Percent, Bell, DollarSign, Key, Save, AlertTriangle, CheckCircle, Loader2, Lightbulb, TrendingUp, FileSearch } from "lucide-react"
 import { useContracts } from "@/lib/contracts"
 import { useSettings, type BucketAllocation } from "@/hooks/use-settings"
 import { useToast } from "@/hooks/use-toast"
+import { OCRSettings } from "@/components/ocr-settings"
 
 export default function SettingsPage() {
   const { bucketVaultAddress, payrollEngineAddress } = useContracts()
@@ -331,7 +332,18 @@ export default function SettingsPage() {
             </CardContent>
           </Card>
 
-          {/* Preferences */}
+          {/* OCR Settings */}
+          <Card className="glass-card border-purple-500/20">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <FileSearch className="w-5 h-5 text-purple-400" />
+                OCR & Receipt Processing
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <OCRSettings />
+            </CardContent>
+          </Card>
           <Card className="glass-card border-purple-500/20">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">

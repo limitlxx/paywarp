@@ -81,24 +81,21 @@ export function PaystackDeposit({ onSuccess, onError }: PaystackDepositProps) {
     setIsProcessing(true)
     
     try {
+      console.log('🔍 Starting payment verification process...')
+      
       const verified = await verifyPayment(currentSession.reference)
       
       if (verified) {
-        // Find the corresponding deposit record
-        const depositRecord = depositHistory.find(
-          record => record.paystackReference === currentSession.reference
-        )
+        console.log('✅ Payment verification completed successfully')
+        // The enhanced deposit hook now handles the complete flow:
+        // 1. Verifies payment and sends USDC to wallet
+        // 2. Clears session after USDC transfer
+        // 3. Waits for balance confirmation with polling
+        // 4. Triggers depositAndSplit after confirmation
         
-        if (depositRecord) {
-          // Trigger auto-split
-          const autoSplitSuccess = await triggerAutoSplit(depositRecord)
-          
-          if (autoSplitSuccess) {
-            onSuccess?.(depositRecord.cryptoAmount)
-            setAmount('')
-            setEmail('')
-          }
-        }
+        onSuccess?.(currentSession.amount)
+        setAmount('')
+        setEmail('')
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Payment processing failed'
@@ -300,12 +297,12 @@ export function PaystackDeposit({ onSuccess, onError }: PaystackDepositProps) {
                     {isProcessing ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Processing...
+                        Verifying Payment & Processing Deposit...
                       </>
                     ) : (
                       <>
                         <CheckCircle2 className="mr-2 h-4 w-4" />
-                        I've Completed Payment
+                        Complete Payment & Deposit
                       </>
                     )}
                   </Button>

@@ -15,6 +15,57 @@ export class WrappedReportService {
   private static readonly DEFAULT_MAX_YEARS_BACK = 5
 
   /**
+   * Compute user's blockchain level based on activity metrics
+   */
+  static computeWalletLevel(summary: ReturnType<typeof this.getOverallSummary>): {
+    level: 'Newbie' | 'Active User' | 'Power User' | 'Whale'
+    progress: number // 0-100 for animation
+    description: string
+    emoji: string
+  } {
+    const { totalTransactions, totalVolume, totalYears } = summary;
+
+    // Calculate weighted score (customize thresholds for your app)
+    const score = 
+      Math.min((totalTransactions / 100) * 30, 30) +  // Transaction count (max 30 points for 100+ txs)
+      Math.min((totalVolume / 10000) * 25, 25) +      // Volume (max 25 points for 10k+ volume)
+      Math.min((totalYears / 3) * 25, 25) +           // Longevity (max 25 for 3+ years)
+      Math.min(Math.random() * 20, 20);               // Consistency placeholder (max 20 points)
+
+    const normalizedProgress = Math.min(Math.max(score, 0), 100);
+
+    if (normalizedProgress < 25) {
+      return { 
+        level: 'Newbie', 
+        progress: normalizedProgress, 
+        description: 'Just getting started on the chain!', 
+        emoji: '🌱' 
+      };
+    } else if (normalizedProgress < 50) {
+      return { 
+        level: 'Active User', 
+        progress: normalizedProgress, 
+        description: 'Regular explorer of DeFi and dApps.', 
+        emoji: '🚀' 
+      };
+    } else if (normalizedProgress < 75) {
+      return { 
+        level: 'Power User', 
+        progress: normalizedProgress, 
+        description: 'Deep in the blockchain ecosystem.', 
+        emoji: '⚡' 
+      };
+    } else {
+      return { 
+        level: 'Whale', 
+        progress: normalizedProgress, 
+        description: 'Legendary mover and shaker on-chain.', 
+        emoji: '🐋' 
+      };
+    }
+  }
+
+  /**
    * Generate wrapped reports for all years with sufficient activity
    */
   static async generateAllWrappedReports(

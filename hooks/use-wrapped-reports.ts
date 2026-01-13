@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useAccount } from 'wagmi'
 import { useTransactionHistory } from './use-transaction-history'
-import { WrappedReport, TransactionSyncService } from '@/lib/transaction-sync'
+import { WrappedReport, TransactionSyncService, BlockchainTransaction } from '@/lib/transaction-sync'
+import { WrappedReportService } from '@/lib/wrapped-report-service'
 
 export interface UseWrappedReportsReturn {
   // Reports data
@@ -10,6 +11,16 @@ export interface UseWrappedReportsReturn {
   hasActivity: boolean
   isLoading: boolean
   error: string | null
+  transactions: BlockchainTransaction[]
+  
+  // Year management
+  availableYears: number[]
+  selectedYear: number | null
+  selectYear: (year: number) => void
+  
+  // Formatted data
+  overallSummary: ReturnType<typeof WrappedReportService.getOverallSummary> | null
+  formattedCurrentReport: ReturnType<typeof WrappedReportService.formatReportForDisplay> | null
   
   // Operations
   generateReports: () => Promise<void>
@@ -26,11 +37,38 @@ export function useWrappedReports(): UseWrappedReportsReturn {
   
   const [reports, setReports] = useState<WrappedReport[]>([])
   const [currentReport, setCurrentReport] = useState<WrappedReport | null>(null)
+  const [selectedYear, setSelectedYear] = useState<number | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   // Check if user has any activity
   const hasActivity = transactions.length > 0
+
+  // Get available years
+  const availableYears = useMemo(() => {
+    return reports.map(r => r.year).sort((a, b) => b - a)
+  }, [reports])
+
+  // Get overall summary
+  const overallSummary = useMemo(() => {
+    if (!address || transactions.length === 0) return null
+    return WrappedReportService.getOverallSummary(transactions, address)
+  }, [transactions, address])
+
+  // Get formatted current report
+  const formattedCurrentReport = useMemo(() => {
+    if (!currentReport) return null
+    return WrappedReportService.formatReportForDisplay(currentReport)
+  }, [currentReport])
+
+  // Select year function
+  const selectYear = useCallback((year: number) => {
+    setSelectedYear(year)
+    const report = reports.find(r => r.year === year)
+    if (report) {
+      setCurrentReport(report)
+    }
+  }, [reports])
 
   // Generate reports for all years with activity
   const generateReports = useCallback(async () => {
@@ -67,6 +105,7 @@ export function useWrappedReports(): UseWrappedReportsReturn {
       // Set current report to most recent year
       if (sortedReports.length > 0) {
         setCurrentReport(sortedReports[0])
+        setSelectedYear(sortedReports[0].year)
       }
 
       console.log(`Generated ${sortedReports.length} wrapped reports`)
@@ -109,10 +148,10 @@ export function useWrappedReports(): UseWrappedReportsReturn {
     }
   }, [reports])
 
-  // Get available years
+  // Get available years (legacy function for compatibility)
   const getAvailableYears = useCallback(() => {
-    return reports.map(r => r.year).sort((a, b) => b - a)
-  }, [reports])
+    return availableYears
+  }, [availableYears])
 
   // Auto-generate reports when transactions change
   useEffect(() => {
@@ -128,6 +167,16 @@ export function useWrappedReports(): UseWrappedReportsReturn {
     hasActivity,
     isLoading: isLoading || isTransactionLoading,
     error,
+    transactions,
+    
+    // Year management
+    availableYears,
+    selectedYear,
+    selectYear,
+    
+    // Formatted data
+    overallSummary,
+    formattedCurrentReport,
     
     // Operations
     generateReports,

@@ -8,8 +8,8 @@ import { LayoutDashboard, Layers, History, Settings, Scan } from "lucide-react"
 const navItems = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard" },
   { icon: Layers, label: "Buckets", href: "/buckets" },
+  { icon: Scan, label: "Expenses", href: "/expenses" },
   { icon: History, label: "History", href: "/history" },
-  { icon: Scan, label: "Scan", href: "/scan" },
   { icon: Settings, label: "Settings", href: "/settings" },
 ]
 

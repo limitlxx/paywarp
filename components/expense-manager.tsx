@@ -2,11 +2,15 @@
 
 import { useState, useRef } from "react"
 import { useExpenses } from "@/hooks/use-buckets"
+import { useOCRMode } from "@/contexts/ocr-mode-context"
+import { useExpenseTracking } from "@/hooks/use-expense-tracking"
+import { EnhancedOCRProcessor, DynamicReceiptData } from "@/lib/enhanced-ocr-processor"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Plus, Receipt, Zap, FileSearch, Calendar, CreditCard, Repeat, Upload, Check, X, Edit } from "lucide-react"
+import { Plus, Receipt, Zap, FileSearch, Calendar, CreditCard, Repeat, Upload, Check, X, Edit, Settings } from "lucide-react"
+import Link from "next/link"
 import {
   Dialog,
   DialogContent,
@@ -20,20 +24,22 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { Progress } from "@/components/ui/progress"
-import { ocrProcessor } from "@/lib/ocr-expense-processor"
-import { ExpenseData, OCRResult } from "@/lib/types"
 import { toast } from "sonner"
 
 export function ExpenseManager() {
   const { expenses } = useExpenses()
+  const { mode, isOnline, apiBaseUrl } = useOCRMode()
+  const { addExpense } = useExpenseTracking()
   const [isScanning, setIsScanning] = useState(false)
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isOCRModalOpen, setIsOCRModalOpen] = useState(false)
   const [ocrProgress, setOCRProgress] = useState(0)
-  const [ocrResult, setOCRResult] = useState<OCRResult | null>(null)
-  const [extractedExpense, setExtractedExpense] = useState<ExpenseData | null>(null)
+  const [extractedExpense, setExtractedExpense] = useState<DynamicReceiptData | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Initialize OCR processor with current settings
+  const ocrProcessor = new EnhancedOCRProcessor(apiBaseUrl)
 
   const handleScanClick = () => {
     fileInputRef.current?.click()
@@ -58,19 +64,15 @@ export function ExpenseManager() {
         setOCRProgress(prev => Math.min(prev + 10, 90))
       }, 200)
 
-      // Process the receipt
-      const result = await ocrProcessor.processReceipt(file)
-      setOCRResult(result)
-      
-      // Extract expense data
-      const expenseData = await ocrProcessor.extractExpenseData(result)
-      setExtractedExpense(expenseData)
+      // Process the receipt with enhanced OCR
+      const result = await ocrProcessor.processReceipt(file, mode)
+      setExtractedExpense(result)
 
       clearInterval(progressInterval)
       setOCRProgress(100)
       setIsProcessing(false)
 
-      toast.success('Receipt processed successfully!')
+      toast.success(`Receipt processed with ${mode.toUpperCase()} (${Math.round(result.confidence * 100)}% confidence)`)
     } catch (error) {
       console.error('OCR processing failed:', error)
       toast.error('Failed to process receipt. Please try again.')
@@ -80,23 +82,20 @@ export function ExpenseManager() {
   }
 
   const handleOCRSave = async () => {
-    if (!extractedExpense || !ocrResult) return
+    if (!extractedExpense) return
 
     try {
-      // Store the receipt image
-      const imageFile = fileInputRef.current?.files?.[0]
-      if (imageFile) {
-        const expenseId = `exp_${Date.now()}`
-        const storagePath = await ocrProcessor.storeReceiptImage(imageFile, expenseId)
-        
-        // Link to billing system
-        await ocrProcessor.linkExpenseToBilling(extractedExpense)
-        
-        toast.success('Expense added to billing tracker!')
-      }
+      // Add expense using the expense tracking hook
+      const newExpense = addExpense(extractedExpense, {
+        bucketId: 'billings', // Default to billings bucket for expenses
+        category: extractedExpense.businessType || 'other',
+        tags: ['ocr-processed', extractedExpense.businessType || 'other'],
+        notes: `Processed with ${mode.toUpperCase()} OCR (${Math.round(extractedExpense.confidence * 100)}% confidence)`
+      })
+      
+      toast.success('Expense added to billing tracker!')
       
       setIsOCRModalOpen(false)
-      setOCRResult(null)
       setExtractedExpense(null)
       setOCRProgress(0)
     } catch (error) {
@@ -105,16 +104,12 @@ export function ExpenseManager() {
     }
   }
 
-  const handleExpenseFieldChange = (field: keyof ExpenseData, value: any) => {
+  const handleExpenseFieldChange = (field: keyof DynamicReceiptData, value: any) => {
     if (!extractedExpense) return
     
     setExtractedExpense(prev => prev ? {
       ...prev,
-      [field]: value,
-      manualCorrections: {
-        ...prev.manualCorrections,
-        [field]: value
-      }
+      [field]: value
     } : null)
   }
 
@@ -134,8 +129,16 @@ export function ExpenseManager() {
             <CardTitle className="text-sm flex items-center gap-2">
               <Receipt className="w-4 h-4 text-purple-400" />
               OCR Receipt Scanner
+              <Badge variant="outline" className="text-xs">
+                {mode.toUpperCase()}
+              </Badge>
             </CardTitle>
-            <CardDescription className="text-[10px]">Instantly extract data from invoices</CardDescription>
+            <CardDescription className="text-[10px]">
+              {mode === 'gemini' && 'High accuracy AI processing'}
+              {mode === 'tesseract' && 'Offline browser processing'}
+              {mode === 'hybrid' && 'Smart adaptive processing'}
+              {!isOnline && mode === 'gemini' && ' (Offline - using Tesseract)'}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <Button
@@ -150,6 +153,18 @@ export function ExpenseManager() {
               )}
               {isScanning ? "Analyzing..." : "Upload Receipt"}
             </Button>
+            <div className="mt-2 flex items-center justify-center gap-2">
+              <div className={`w-2 h-2 rounded-full ${isOnline ? 'bg-green-400' : 'bg-red-400'}`} />
+              <span className="text-xs text-muted-foreground">
+                {isOnline ? 'Online' : 'Offline'}
+              </span>
+              <Link href="/settings" className="ml-2">
+                <Button variant="ghost" size="sm" className="h-6 px-2 text-xs">
+                  <Settings className="w-3 h-3 mr-1" />
+                  Settings
+                </Button>
+              </Link>
+            </div>
           </CardContent>
         </Card>
 
@@ -181,7 +196,7 @@ export function ExpenseManager() {
               Receipt Processing
             </DialogTitle>
             <DialogDescription>
-              {isProcessing ? "Analyzing receipt with OCR..." : "Review and confirm extracted data"}
+              {isProcessing ? `Analyzing receipt with ${mode.toUpperCase()} OCR...` : "Review and confirm extracted data"}
             </DialogDescription>
           </DialogHeader>
           
@@ -189,10 +204,22 @@ export function ExpenseManager() {
             <div className="space-y-4 py-6">
               <Progress value={ocrProgress} className="w-full" />
               <p className="text-center text-sm text-muted-foreground">
-                Processing receipt... {ocrProgress}%
+                Processing receipt with {mode.toUpperCase()}... {ocrProgress}%
               </p>
+              <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+                {!isOnline && mode === 'gemini' && (
+                  <Badge variant="outline" className="text-yellow-400 border-yellow-400/20">
+                    Offline - Using Tesseract fallback
+                  </Badge>
+                )}
+                {mode === 'hybrid' && (
+                  <Badge variant="outline" className="text-blue-400 border-blue-400/20">
+                    Hybrid Mode - Best accuracy
+                  </Badge>
+                )}
+              </div>
             </div>
-          ) : extractedExpense && ocrResult ? (
+          ) : extractedExpense ? (
             <div className="space-y-4 py-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
@@ -223,32 +250,53 @@ export function ExpenseManager() {
               
               <div className="space-y-2">
                 <Label htmlFor="ocr-category" className="flex items-center gap-2">
-                  Category
+                  Business Type
                   <Badge 
                     variant="outline" 
-                    className={`text-xs ${extractedExpense.category.autoApproved ? 'border-green-500/20 text-green-400' : 'border-yellow-500/20 text-yellow-400'}`}
+                    className="text-xs border-blue-500/20 text-blue-400"
                   >
-                    {extractedExpense.category.autoApproved ? 'Auto-approved' : 'Needs review'}
+                    {extractedExpense.businessType || 'other'}
                   </Badge>
                 </Label>
                 <Select 
-                  value={extractedExpense.category.name}
-                  onValueChange={(value) => handleExpenseFieldChange('category', { ...extractedExpense.category, name: value })}
+                  value={extractedExpense.businessType || 'other'}
+                  onValueChange={(value) => handleExpenseFieldChange('businessType', value)}
                 >
                   <SelectTrigger className="glass border-white/10">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent className="glass border-purple-500/20">
-                    <SelectItem value="office-supplies">Office Supplies</SelectItem>
-                    <SelectItem value="software">Software</SelectItem>
-                    <SelectItem value="travel">Travel</SelectItem>
-                    <SelectItem value="meals">Meals</SelectItem>
-                    <SelectItem value="utilities">Utilities</SelectItem>
-                    <SelectItem value="marketing">Marketing</SelectItem>
-                    <SelectItem value="professional-services">Professional Services</SelectItem>
+                    <SelectItem value="restaurant">Restaurant</SelectItem>
+                    <SelectItem value="retail">Retail</SelectItem>
+                    <SelectItem value="gas-station">Gas Station</SelectItem>
+                    <SelectItem value="grocery">Grocery</SelectItem>
+                    <SelectItem value="pharmacy">Pharmacy</SelectItem>
+                    <SelectItem value="service">Service</SelectItem>
                     <SelectItem value="other">Other</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="ocr-currency">Currency</Label>
+                  <Input
+                    id="ocr-currency"
+                    value={extractedExpense.currency}
+                    onChange={(e) => handleExpenseFieldChange('currency', e.target.value)}
+                    className="glass border-white/10"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="ocr-payment">Payment Method</Label>
+                  <Input
+                    id="ocr-payment"
+                    value={extractedExpense.paymentMethod || ''}
+                    onChange={(e) => handleExpenseFieldChange('paymentMethod', e.target.value)}
+                    className="glass border-white/10"
+                    placeholder="e.g., Credit Card"
+                  />
+                </div>
               </div>
 
               <div className="space-y-2">
@@ -262,14 +310,47 @@ export function ExpenseManager() {
                 />
               </div>
 
-              {ocrResult.extractedText && (
+              {extractedExpense.items && extractedExpense.items.length > 0 && (
                 <div className="space-y-2">
-                  <Label>Extracted Text (for reference)</Label>
-                  <Textarea
-                    value={ocrResult.extractedText}
-                    readOnly
-                    className="glass border-white/10 text-xs h-20"
-                  />
+                  <Label>Items ({extractedExpense.items.length})</Label>
+                  <div className="max-h-32 overflow-y-auto space-y-1">
+                    {extractedExpense.items.map((item, index) => (
+                      <div key={index} className="flex justify-between items-center p-2 bg-white/5 rounded text-xs">
+                        <span>{item.name}</span>
+                        <div className="flex items-center gap-2">
+                          {item.quantity && (
+                            <Badge variant="outline" className="text-xs">
+                              Qty: {item.quantity}
+                            </Badge>
+                          )}
+                          <span className="font-mono">${item.price.toFixed(2)}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {(extractedExpense.location || extractedExpense.contact) && (
+                <div className="space-y-2">
+                  <Label>Additional Info</Label>
+                  <div className="text-xs text-muted-foreground space-y-1">
+                    {extractedExpense.location && (
+                      <div>
+                        <strong>Location:</strong> {[
+                          extractedExpense.location.address,
+                          extractedExpense.location.city,
+                          extractedExpense.location.state
+                        ].filter(Boolean).join(', ')}
+                      </div>
+                    )}
+                    {extractedExpense.contact?.phone && (
+                      <div><strong>Phone:</strong> {extractedExpense.contact.phone}</div>
+                    )}
+                    {extractedExpense.receiptNumber && (
+                      <div><strong>Receipt #:</strong> {extractedExpense.receiptNumber}</div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

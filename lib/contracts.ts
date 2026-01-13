@@ -4,10 +4,12 @@ import { getContractAddress, type NetworkType } from './networks'
 import { useNetwork } from '../hooks/use-network'
 import BucketVaultABI from './abis/BucketVault.json'
 import PayrollEngineABI from './abis/PayrollEngine.json'
+import ExpenseTrackerABI from './abis/ExpenseTracker.json'
 
 // Contract ABI definitions
 export const BUCKET_VAULT_ABI = BucketVaultABI
 export const PAYROLL_ENGINE_ABI = PayrollEngineABI
+export const EXPENSE_TRACKER_ABI = ExpenseTrackerABI
 
 // Standard ERC20 ABI for token contracts
 export const ERC20_ABI = [
@@ -87,12 +89,13 @@ export const USDY_TOKEN_ABI = ERC20_ABI
 export const MUSD_TOKEN_ABI = ERC20_ABI
 
 // Contract names type
-export type ContractName = 'bucketVault' | 'payrollEngine' | 'usdyToken' | 'musdToken'
+export type ContractName = 'bucketVault' | 'payrollEngine' | 'expenseTracker' | 'usdyToken' | 'musdToken'
 
 // Contract configuration mapping
 const CONTRACT_CONFIG = {
   bucketVault: BUCKET_VAULT_ABI,
   payrollEngine: PAYROLL_ENGINE_ABI,
+  expenseTracker: EXPENSE_TRACKER_ABI,
   usdyToken: USDY_TOKEN_ABI,
   musdToken: MUSD_TOKEN_ABI,
 } as const

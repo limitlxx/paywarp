@@ -442,7 +442,7 @@ export class DepositService {
    */
   async depositFromFaucet(
     userAddress: string,
-    amount: number = 100
+    amount: number = 6.67
   ): Promise<DepositResult> {
     try {
       if (!this.managedWallet) {

@@ -91,7 +91,9 @@ export function EnhancedDepositModal({ open, onOpenChange, bucketId = "auto-spli
             result = await depositFromWallet(numAmount, bucketId as string)
           }
         } else if (method === "faucet") {
-          result = await depositFromFaucet(numAmount)
+          // Convert NGN to USDC for faucet (Rate: ₦1,500 = 1 USDC)
+          const usdcAmount = numAmount / 1500
+          result = await depositFromFaucet(usdcAmount)
         }
         
         if (result?.success) {

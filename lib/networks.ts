@@ -45,7 +45,7 @@ export const mantleSepolia = defineChain({
   blockExplorers: {
     default: {
       name: 'Mantle Sepolia Explorer',
-      url: 'https://explorer.sepolia.mantle.xyz',
+      url: 'https://sepolia.mantle.xyz',
     },
   },
   contracts: {
@@ -65,12 +65,14 @@ export const CONTRACT_ADDRESSES = {
   mainnet: {
     bucketVault: process.env.NEXT_PUBLIC_BUCKET_VAULT_MAINNET as `0x${string}`,
     payrollEngine: process.env.NEXT_PUBLIC_PAYROLL_ENGINE_MAINNET as `0x${string}`,
+    expenseTracker: process.env.NEXT_PUBLIC_EXPENSE_TRACKER_MAINNET as `0x${string}`,
     usdyToken: process.env.NEXT_PUBLIC_USDY_TOKEN_MAINNET as `0x${string}`,
     musdToken: process.env.NEXT_PUBLIC_MUSD_TOKEN_MAINNET as `0x${string}`,
   },
   sepolia: {
     bucketVault: process.env.NEXT_PUBLIC_BUCKET_VAULT_SEPOLIA as `0x${string}`,
     payrollEngine: process.env.NEXT_PUBLIC_PAYROLL_ENGINE_SEPOLIA as `0x${string}`,
+    expenseTracker: process.env.NEXT_PUBLIC_EXPENSE_TRACKER_SEPOLIA as `0x${string}`,
     usdyToken: process.env.NEXT_PUBLIC_USDY_TOKEN_SEPOLIA as `0x${string}`,
     musdToken: process.env.NEXT_PUBLIC_MUSD_TOKEN_SEPOLIA as `0x${string}`,
   },

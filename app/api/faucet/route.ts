@@ -27,13 +27,13 @@ export async function POST(request: NextRequest) {
     if (tokenSymbol === 'USDC') {
       try {
         const depositService = getDepositService()
-        const result = await depositService.depositFromFaucet(recipientAddress, amount || 100)
+        const result = await depositService.depositFromFaucet(recipientAddress, amount || 6.67)
         
         if (result.success) {
           return NextResponse.json({
             success: true,
             transactionHash: result.transactionHash,
-            amount: (amount || 100).toString()
+            amount: (amount || 6.67).toString()
           })
         } else {
           return NextResponse.json(

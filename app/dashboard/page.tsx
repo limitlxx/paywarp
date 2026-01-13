@@ -18,18 +18,18 @@ import {
   Droplet,
   Scan,
   Loader2,
+  Play,
 } from "lucide-react"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts"
 import Link from "next/link"
 import { useState, useMemo, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { useAccount } from "wagmi"
-import { DepositModal } from "@/components/modals/deposit-modal"
 import { EnhancedDepositModal } from "@/components/modals/enhanced-deposit-modal"
 import { useTransactionHistory } from "@/hooks/use-transaction-history"
 import { useWrappedReports } from "@/hooks/use-wrapped-reports"
+import { useWalletTxSync } from "@/hooks/useWalletTxSync"
 import { formatEther } from "viem"
-import { DebugTransactionStatus } from "@/components/debug-transaction-status"
 
 // Preference storage utilities for wrapped redirect
 const WRAPPED_VIEWED_KEY = 'paywarp-wrapped-viewed'
@@ -46,6 +46,7 @@ export default function Dashboard() {
   const [isDepositOpen, setIsDepositOpen] = useState(false)
   const { transactions, isLoading, refreshHistory, syncHistory, fromCache, error } = useTransactionHistory()
   const { hasActivity } = useWrappedReports()
+  const walletSync = useWalletTxSync({ autoStart: false })
   const [isRefreshing, setIsRefreshing] = useState(false)
 
   // Handle payment callback from Paystack
@@ -181,24 +182,10 @@ export default function Dashboard() {
     return data
   }, [transactions])
 
-  // Handle refresh - sync more historical data
+  // Handle refresh - use wallet sync for better UX
   const handleRefresh = async () => {
-    setIsRefreshing(true)
-    try {
-      // Clear any existing errors first
-      console.log('Starting manual sync from dashboard')
-      
-      // Sync more blocks when user manually refreshes, and force fresh data
-      await refreshHistory()
-      
-      // Also do a more comprehensive sync to catch any missed transactions
-      await syncHistory({ forceSync: true, maxBlocks: 200 })
-      
-      console.log('Manual refresh completed successfully')
-    } catch (error) {
-      console.error('Manual refresh failed:', error)
-    } finally {
-      setIsRefreshing(false)
+    if (!walletSync.isSyncing) {
+      walletSync.startSync({ maxBlocks: 500 })
     }
   }
   
@@ -212,6 +199,112 @@ export default function Dashboard() {
             {/* Debug Component - Remove this after fixing */}
             {/** <DebugTransactionStatus /> **/}
 
+            {/* Wallet Sync Control Panel - NEW */}
+            <Card className="glass-card border-purple-500/20">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 rounded-lg bg-purple-500/20">
+                      <Activity className="w-4 h-4 text-purple-400" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-foreground">Wallet Transaction Sync</h3>
+                      <p className="text-xs text-muted-foreground">
+                        {walletSync.isSyncing ? (
+                          <span className="flex items-center gap-1">
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                            Syncing wallet transactions...
+                            {walletSync.syncProgress && (
+                              <span className="ml-1">
+                                ({walletSync.syncProgress.percentage}%)
+                              </span>
+                            )}
+                          </span>
+                        ) : walletSync.isPaused ? (
+                          <span className="text-yellow-400">Sync paused</span>
+                        ) : (
+                          `${walletSync.transactions.length} transactions synced`
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {!walletSync.isSyncing ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="glass-card border-green-500/30 text-green-400 hover:bg-green-500/10"
+                        onClick={() => walletSync.startSync({ maxBlocks: 10000 })}
+                      >
+                        <Play className="w-3 h-3 mr-1" />
+                        Start Sync
+                      </Button>
+                    ) : (
+                      <>
+                        {!walletSync.isPaused ? (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="glass-card border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/10"
+                            onClick={walletSync.pauseSync}
+                          >
+                            <RefreshCw className="w-3 h-3 mr-1" />
+                            Pause
+                          </Button>
+                        ) : (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="glass-card border-green-500/30 text-green-400 hover:bg-green-500/10"
+                            onClick={walletSync.resumeSync}
+                          >
+                            <Play className="w-3 h-3 mr-1" />
+                            Resume
+                          </Button>
+                        )}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="glass-card border-red-500/30 text-red-400 hover:bg-red-500/10"
+                          onClick={walletSync.stopSync}
+                        >
+                          Stop
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
+                
+                {/* Progress Bar */}
+                {walletSync.syncProgress && (
+                  <div className="mt-3">
+                    <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                      <span>Block {walletSync.syncProgress.current} of {walletSync.syncProgress.total}</span>
+                      <span>{walletSync.syncProgress.percentage}%</span>
+                    </div>
+                    <div className="h-2 bg-white/10 rounded-full overflow-hidden">
+                      <div 
+                        className="h-full bg-gradient-to-r from-purple-500 to-blue-500 transition-all duration-300"
+                        style={{ width: `${walletSync.syncProgress.percentage}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Sync Status with Particles */}
+                {walletSync.isSyncing && (
+                  <div className="mt-3 flex items-center gap-2 text-xs text-purple-400">
+                    <div className="flex gap-1">
+                      <div className="w-1 h-1 bg-purple-500 rounded-full animate-pulse" />
+                      <div className="w-1 h-1 bg-blue-500 rounded-full animate-pulse delay-100" />
+                      <div className="w-1 h-1 bg-purple-500 rounded-full animate-pulse delay-200" />
+                    </div>
+                    <span>Scanning blockchain for your transactions...</span>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
             {/* Summary Row */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="space-y-1">
@@ -222,9 +315,19 @@ export default function Dashboard() {
                       <Loader2 className="w-3 h-3 animate-spin" />
                       Loading your data...
                     </span>
+                  ) : walletSync.isSyncing ? (
+                    <span className="flex items-center gap-2">
+                      <RefreshCw className="w-3 h-3 animate-spin" />
+                      Syncing wallet transactions...
+                      {walletSync.syncProgress && (
+                        <span className="text-blue-400">
+                          ({walletSync.syncProgress.percentage}%)
+                        </span>
+                      )}
+                    </span>
                   ) : stats.transactionCount > 0 ? (
                     <span>
-                      {stats.transactionCount} total transactions • {stats.recentCount} this month
+                      {walletSync.transactions.length} wallet transactions • {stats.transactionCount} contract transactions
                       {fromCache && <span className="text-purple-400 ml-2">• Cached data</span>}
                     </span>
                   ) : (
@@ -248,11 +351,33 @@ export default function Dashboard() {
                   variant="outline"
                   size="sm"
                   className="glass-card border-blue-500/30 text-blue-400 hover:bg-blue-500/10 gap-2 bg-transparent"
-                  onClick={handleRefresh}
-                  disabled={isRefreshing}
+                  onClick={() => {
+                    if (!walletSync.isSyncing) {
+                      walletSync.startSync({ maxBlocks: 1000 })
+                    } else if (walletSync.isPaused) {
+                      walletSync.resumeSync()
+                    } else {
+                      walletSync.pauseSync()
+                    }
+                  }}
+                  disabled={false}
                 >
-                  <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-                  {isRefreshing ? 'Syncing...' : 'Sync More History'}
+                  {!walletSync.isSyncing ? (
+                    <>
+                      <Play className="w-4 h-4" />
+                      Start Sync
+                    </>
+                  ) : walletSync.isPaused ? (
+                    <>
+                      <Play className="w-4 h-4" />
+                      Resume
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      Pause Sync
+                    </>
+                  )}
                 </Button>
                 <Button
                   variant="outline"

@@ -23,9 +23,9 @@ const tokens = [
   {
     symbol: "USDC" as const,
     name: "USD Coin",
-    amount: "100",
+    amount: "6.67",
     color: "from-blue-500 to-cyan-500",
-    description: "Stablecoin for payroll and settlements",
+    description: "Stablecoin equivalent to ₦10,000 for testing PayWarp features",
   },
 ]
 
@@ -218,7 +218,7 @@ export default function FaucetPage() {
                             <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
                               <ExternalLink className="w-3 h-3" />
                               <a 
-                                href={`https://explorer.sepolia.mantle.xyz/tx/${txHash}`}
+                                href={`https://sepolia.mantlescan.xyz/tx/${txHash}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="hover:text-purple-400 transition-colors"

@@ -7,6 +7,7 @@ import { NetworkProvider } from "@/hooks/use-network"
 import { WalletProvider } from "@/hooks/use-wallet"
 import { CurrencyProvider } from "@/hooks/use-currency"
 import { NavigationProvider } from "@/components/navigation-provider"
+import { OCRModeProvider } from "@/contexts/ocr-mode-context"
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
@@ -20,7 +21,11 @@ export function Providers({ children }: { children: React.ReactNode }) {
         <NetworkProvider>
           <WalletProvider>
             <CurrencyProvider>
-              <NavigationProvider>{children}</NavigationProvider>
+              <NavigationProvider>
+                <OCRModeProvider>
+                  {children}
+                </OCRModeProvider>
+              </NavigationProvider>
             </CurrencyProvider>
           </WalletProvider>
         </NetworkProvider>

@@ -12,14 +12,15 @@ import { WarpLoading } from "@/components/warp-loading"
 const outfit = Outfit({ 
   subsets: ["latin"],
   display: 'swap',
-  variable: '--font-outfit'
+  variable: '--font-outfit',
+  fallback: ['system-ui', 'arial']
 })
 
 export const metadata: Metadata = {
-  title: "PayWarp - DeFi Budgeting & Payroll on Mantle L2",
+  title: "PayWarp - DeFi Budgeting, Savings & Payroll on Mantle L2",
   description:
-    "Earn yields on your team's payroll. Unified buckets for budgeting, expenses, and DeFi payroll on Mantle.",
-  generator: "v0.app",
+    "Earn yields on every dwposit. Unified buckets for budgeting, expenses, and DeFi payroll on Mantle.",
+
   icons: {
     icon: [
       {

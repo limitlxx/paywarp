@@ -243,145 +243,145 @@ export class TransactionSyncService {
    * Fetch user transactions via Alchemy Transfer API (no block scanning)
    * Filters for your contracts; paginates for full history
    */
-  async fetchUserTransactionsAlchemy(
-    userAddress: string,
-    options: TransactionSyncOptions = {}
-  ): Promise<BlockchainTransaction[]> {
-    try {
-      const alchemyEndpoint = this.networkType === 'mainnet' 
-        ? `https://mantle-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`
-        : `https://mantle-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`
+  // async fetchUserTransactionsAlchemy(
+  //   userAddress: string,
+  //   options: TransactionSyncOptions = {}
+  // ): Promise<BlockchainTransaction[]> {
+  //   try {
+  //     const alchemyEndpoint = this.networkType === 'mainnet' 
+  //       ? `https://mantle-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`
+  //       : `https://mantle-sepolia.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`
 
-      // Build request payload
-      const payload = {
-        id: 1,
-        jsonrpc: '2.0',
-        method: 'alchemy_getAssetTransfers',
-        params: [{
-          fromBlock: options.fromBlock ? `0x${options.fromBlock.toString(16)}` : '0x0',
-          toBlock: options.toBlock ? `0x${options.toBlock.toString(16)}` : 'latest',
-          fromAddress: userAddress,
-          toAddress: userAddress,
-          contractAddresses: [this.bucketVaultAddress, this.payrollEngineAddress],
-          category: ['external', 'internal', 'erc20', 'erc721', 'erc1155'],
-          withMetadata: true,
-          excludeZeroValue: false,
-          maxCount: '0x3e8', // 1000 transactions per call
-          order: 'asc'
-        }]
-      }
+  //     // Build request payload
+  //     const payload = {
+  //       id: 1,
+  //       jsonrpc: '2.0',
+  //       method: 'alchemy_getAssetTransfers',
+  //       params: [{
+  //         fromBlock: options.fromBlock ? `0x${options.fromBlock.toString(16)}` : '0x0',
+  //         toBlock: options.toBlock ? `0x${options.toBlock.toString(16)}` : 'latest',
+  //         fromAddress: userAddress,
+  //         toAddress: userAddress,
+  //         contractAddresses: [this.bucketVaultAddress, this.payrollEngineAddress],
+  //         category: ['external', 'internal', 'erc20', 'erc721', 'erc1155'],
+  //         withMetadata: true,
+  //         excludeZeroValue: false,
+  //         maxCount: '0x3e8', // 1000 transactions per call
+  //         order: 'asc'
+  //       }]
+  //     }
 
-      console.log(`🔍 Fetching transactions via Alchemy Transfer API...`)
-      console.log(`   Endpoint: ${alchemyEndpoint.replace(process.env.ALCHEMY_API_KEY!, '[API_KEY]')}`)
-      console.log(`   User: ${userAddress}`)
-      console.log(`   Contracts: [${this.bucketVaultAddress}, ${this.payrollEngineAddress}]`)
+  //     console.log(`🔍 Fetching transactions via Alchemy Transfer API...`)
+  //     console.log(`   Endpoint: ${alchemyEndpoint.replace(process.env.ALCHEMY_API_KEY!, '[API_KEY]')}`)
+  //     console.log(`   User: ${userAddress}`)
+  //     console.log(`   Contracts: [${this.bucketVaultAddress}, ${this.payrollEngineAddress}]`)
 
-      const response = await fetch(alchemyEndpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
-        body: JSON.stringify(payload)
-      })
+  //     const response = await fetch(alchemyEndpoint, {
+  //       method: 'POST',
+  //       headers: {
+  //         'Content-Type': 'application/json',
+  //         'Accept': 'application/json'
+  //       },
+  //       body: JSON.stringify(payload)
+  //     })
 
-      if (!response.ok) {
-        throw new Error(`Alchemy API error: ${response.status} ${response.statusText}`)
-      }
+  //     if (!response.ok) {
+  //       throw new Error(`Alchemy API error: ${response.status} ${response.statusText}`)
+  //     }
 
-      const data = await response.json()
+  //     const data = await response.json()
       
-      if (data.error) {
-        throw new Error(`Alchemy API error: ${data.error.message}`)
-      }
+  //     if (data.error) {
+  //       throw new Error(`Alchemy API error: ${data.error.message}`)
+  //     }
 
-      if (!data.result || !data.result.transfers) {
-        console.log('No transfers found via Alchemy API')
-        return []
-      }
+  //     if (!data.result || !data.result.transfers) {
+  //       console.log('No transfers found via Alchemy API')
+  //       return []
+  //     }
 
-      console.log(`📦 Alchemy returned ${data.result.transfers.length} transfers`)
+  //     console.log(`📦 Alchemy returned ${data.result.transfers.length} transfers`)
 
-      // Map Alchemy transfers to your BlockchainTransaction type
-      const transactions: BlockchainTransaction[] = []
+  //     // Map Alchemy transfers to your BlockchainTransaction type
+  //     const transactions: BlockchainTransaction[] = []
       
-      for (const transfer of data.result.transfers) {
-        try {
-          // Skip transfers that don't involve our contracts
-          const isRelevantContract = transfer.rawContract?.address && (
-            transfer.rawContract.address.toLowerCase() === this.bucketVaultAddress.toLowerCase() ||
-            transfer.rawContract.address.toLowerCase() === this.payrollEngineAddress.toLowerCase()
-          )
+  //     for (const transfer of data.result.transfers) {
+  //       try {
+  //         // Skip transfers that don't involve our contracts
+  //         const isRelevantContract = transfer.rawContract?.address && (
+  //           transfer.rawContract.address.toLowerCase() === this.bucketVaultAddress.toLowerCase() ||
+  //           transfer.rawContract.address.toLowerCase() === this.payrollEngineAddress.toLowerCase()
+  //         )
 
-          if (!isRelevantContract) {
-            continue
-          }
+  //         if (!isRelevantContract) {
+  //           continue
+  //         }
 
-          // Get block timestamp for accurate transaction time
-          let timestamp: Date
-          try {
-            const block = await this.rpcProvider.executeRead(async (client: any) => {
-              return client.getBlock({ blockNumber: BigInt(transfer.blockNum) })
-            })
-            timestamp = new Date(Number(block.timestamp) * 1000)
-          } catch (error) {
-            // Fallback to current time if block fetch fails
-            timestamp = new Date()
-          }
+  //         // Get block timestamp for accurate transaction time
+  //         let timestamp: Date
+  //         try {
+  //           const block = await this.rpcProvider.executeRead(async (client: any) => {
+  //             return client.getBlock({ blockNumber: BigInt(transfer.blockNum) })
+  //           })
+  //           timestamp = new Date(Number(block.timestamp) * 1000)
+  //         } catch (error) {
+  //           // Fallback to current time if block fetch fails
+  //           timestamp = new Date()
+  //         }
 
-          const transaction: BlockchainTransaction = {
-            id: `${transfer.hash}-${transfer.uniqueId || '0'}`,
-            hash: transfer.hash as `0x${string}`,
-            type: this.inferTypeFromAlchemyTransfer(transfer),
-            amount: BigInt(transfer.value || '0'),
-            fromBucket: transfer.metadata?.fromBucket,
-            toBucket: transfer.metadata?.toBucket,
-            recipient: transfer.to || undefined,
-            timestamp,
-            blockNumber: BigInt(transfer.blockNum),
-            status: 'completed', // Alchemy only returns confirmed transactions
-            gasUsed: BigInt(0), // Will be filled if needed
-            gasCost: BigInt(0),
-            description: this.generateDescriptionFromAlchemyTransfer(transfer),
-            metadata: this.extractMetadataFromAlchemyTransfer(transfer),
-            contractAddress: transfer.rawContract?.address as `0x${string}` || this.bucketVaultAddress,
-            eventName: transfer.rawContract?.eventName || 'Transfer'
-          }
+  //         const transaction: BlockchainTransaction = {
+  //           id: `${transfer.hash}-${transfer.uniqueId || '0'}`,
+  //           hash: transfer.hash as `0x${string}`,
+  //           type: this.inferTypeFromAlchemyTransfer(transfer),
+  //           amount: BigInt(transfer.value || '0'),
+  //           fromBucket: transfer.metadata?.fromBucket,
+  //           toBucket: transfer.metadata?.toBucket,
+  //           recipient: transfer.to || undefined,
+  //           timestamp,
+  //           blockNumber: BigInt(transfer.blockNum),
+  //           status: 'completed', // Alchemy only returns confirmed transactions
+  //           gasUsed: BigInt(0), // Will be filled if needed
+  //           gasCost: BigInt(0),
+  //           description: this.generateDescriptionFromAlchemyTransfer(transfer),
+  //           metadata: this.extractMetadataFromAlchemyTransfer(transfer),
+  //           contractAddress: transfer.rawContract?.address as `0x${string}` || this.bucketVaultAddress,
+  //           eventName: transfer.rawContract?.eventName || 'Transfer'
+  //         }
 
-          transactions.push(transaction)
-        } catch (error) {
-          console.warn('Failed to process Alchemy transfer:', error, transfer)
-          // Continue processing other transfers
-        }
-      }
+  //         transactions.push(transaction)
+  //       } catch (error) {
+  //         console.warn('Failed to process Alchemy transfer:', error, transfer)
+  //         // Continue processing other transfers
+  //       }
+  //     }
 
-      // Handle pagination if there are more results
-      if (data.result.pageKey && transactions.length < 10000) { // Reasonable limit
-        console.log('📄 Fetching additional pages...')
-        const additionalTxs = await this.fetchAlchemyPaginatedResults(
-          alchemyEndpoint, 
-          payload, 
-          data.result.pageKey,
-          userAddress
-        )
-        transactions.push(...additionalTxs)
-      }
+  //     // Handle pagination if there are more results
+  //     if (data.result.pageKey && transactions.length < 10000) { // Reasonable limit
+  //       console.log('📄 Fetching additional pages...')
+  //       const additionalTxs = await this.fetchAlchemyPaginatedResults(
+  //         alchemyEndpoint, 
+  //         payload, 
+  //         data.result.pageKey,
+  //         userAddress
+  //       )
+  //       transactions.push(...additionalTxs)
+  //     }
 
-      // Sort by block number and timestamp
-      const sortedTransactions = transactions.sort((a, b) => {
-        const blockDiff = Number(a.blockNumber - b.blockNumber)
-        if (blockDiff !== 0) return blockDiff
-        return a.timestamp.getTime() - b.timestamp.getTime()
-      })
+  //     // Sort by block number and timestamp
+  //     const sortedTransactions = transactions.sort((a, b) => {
+  //       const blockDiff = Number(a.blockNumber - b.blockNumber)
+  //       if (blockDiff !== 0) return blockDiff
+  //       return a.timestamp.getTime() - b.timestamp.getTime()
+  //     })
 
-      console.log(`✅ Alchemy API processed ${sortedTransactions.length} relevant transactions`)
-      return sortedTransactions
+  //     console.log(`✅ Alchemy API processed ${sortedTransactions.length} relevant transactions`)
+  //     return sortedTransactions
 
-    } catch (error) {
-      console.error('Alchemy Transfer API failed:', error)
-      throw error
-    }
-  }
+  //   } catch (error) {
+  //     console.error('Alchemy Transfer API failed:', error)
+  //     throw error
+  //   }
+  // }
 
   /**
    * Fetch paginated results from Alchemy API
@@ -724,28 +724,28 @@ export class TransactionSyncService {
   /**
    * Helper: Infer transaction type from Alchemy transfer data
    */
-  private inferTypeFromAlchemyTransfer(transfer: any): TransactionType {
-    const contract = transfer.rawContract?.address?.toLowerCase()
-    const eventName = transfer.metadata?.eventName || transfer.category
+  // private inferTypeFromAlchemyTransfer(transfer: any): TransactionType {
+  //   const contract = transfer.rawContract?.address?.toLowerCase()
+  //   const eventName = transfer.metadata?.eventName || transfer.category
     
-    if (contract === this.bucketVaultAddress.toLowerCase()) {
-      if (eventName === 'FundsSplit') return 'split'
-      if (eventName === 'BucketTransfer') return 'transfer'
-      if (eventName === 'GoalCompleted') return 'goal_completed'
-    }
+  //   if (contract === this.bucketVaultAddress.toLowerCase()) {
+  //     if (eventName === 'FundsSplit') return 'split'
+  //     if (eventName === 'BucketTransfer') return 'transfer'
+  //     if (eventName === 'GoalCompleted') return 'goal_completed'
+  //   }
     
-    if (contract === this.payrollEngineAddress.toLowerCase()) {
-      if (eventName === 'PayrollProcessed') return 'payroll_processed'
-      if (eventName === 'EmployeeAdded') return 'employee_added'
-      if (eventName === 'PayrollScheduled') return 'payroll_scheduled'
-    }
+  //   if (contract === this.payrollEngineAddress.toLowerCase()) {
+  //     if (eventName === 'PayrollProcessed') return 'payroll_processed'
+  //     if (eventName === 'EmployeeAdded') return 'employee_added'
+  //     if (eventName === 'PayrollScheduled') return 'payroll_scheduled'
+  //   }
     
-    // Default categorization based on transfer type
-    if (transfer.category === 'external') return 'deposit'
-    if (transfer.category === 'internal') return 'transfer'
+  //   // Default categorization based on transfer type
+  //   if (transfer.category === 'external') return 'deposit'
+  //   if (transfer.category === 'internal') return 'transfer'
     
-    return 'transfer' // Default fallback
-  }
+  //   return 'transfer' // Default fallback
+  // }
 
   /**
    * Incremental sync - only fetch new transactions since last sync

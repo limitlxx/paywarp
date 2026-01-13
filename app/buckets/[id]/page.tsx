@@ -38,11 +38,21 @@ import { SavingsGoalOverview } from "@/components/savings-goal-overview"
 import { DepositModal } from "@/components/modals/deposit-modal"
 import { WithdrawModal } from "@/components/modals/withdraw-modal"
 import { NetworkGuard } from "@/components/network-guard"
-import type { BucketType } from "@/types/bucket"
+
+type BucketType = 'billings' | 'savings' | 'growth' | 'instant' | 'spendable'
 
 const bucketData = {
-  billings: { name: "Billings", color: "#A100FF", icon: Droplet, balance: "$12,450.00", percentage: 45 },
+  billings: { 
+    id: 'billings',
+    name: "Billings", 
+    color: "#A100FF", 
+    icon: Droplet, 
+    balance: "$12,450.00", 
+    percentage: 45, 
+    isYielding: false 
+  },
   savings: {
+    id: 'savings',
     name: "Savings",
     color: "#6366F1",
     icon: PiggyBank,
@@ -51,6 +61,7 @@ const bucketData = {
     isYielding: true,
   },
   growth: {
+    id: 'growth',
     name: "Growth",
     color: "#3B82F6",
     icon: TrendingUp,
@@ -58,8 +69,24 @@ const bucketData = {
     percentage: 35,
     isYielding: true,
   },
-  instant: { name: "Instant", color: "#F59E0B", icon: Zap, balance: "$15,800.00", percentage: 60 },
-  spendable: { name: "Spendable", color: "#10B981", icon: Wallet, balance: "$22,989.90", percentage: 100 },
+  instant: { 
+    id: 'instant',
+    name: "Instant", 
+    color: "#F59E0B", 
+    icon: Zap, 
+    balance: "$15,800.00", 
+    percentage: 60, 
+    isYielding: false 
+  },
+  spendable: { 
+    id: 'spendable',
+    name: "Spendable", 
+    color: "#10B981", 
+    icon: Wallet, 
+    balance: "$22,989.90", 
+    percentage: 100, 
+    isYielding: false 
+  },
 }
 
 const buckets = Object.values(bucketData)

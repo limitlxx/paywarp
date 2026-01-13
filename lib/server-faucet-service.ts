@@ -1,11 +1,11 @@
-import { createPublicClient, createWalletClient, http, parseEther, formatEther } from 'viem'
+import { createPublicClient, createWalletClient, http, parseEther, formatEther, parseUnits, formatUnits } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { mantleSepolia } from '@/lib/networks'
 
 // Faucet configuration
 const FAUCET_AMOUNTS = {
   MNT: parseEther('10'), // 10 MNT
-  USDC: parseEther('100'), // 100 USDC (using 18 decimals for mock)
+  USDC: parseUnits('6.67', 6), // 6.67 USDC (using 6 decimals for USDC)
 } as const
 
 const RATE_LIMIT_HOURS = 24
@@ -139,7 +139,7 @@ export class ServerFaucetService {
       return {
         success: true,
         transactionHash,
-        amount: formatEther(amount)
+        amount: tokenSymbol === 'USDC' ? formatUnits(amount, 6) : formatEther(amount)
       }
 
     } catch (error) {
