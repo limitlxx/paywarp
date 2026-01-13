@@ -21,29 +21,28 @@ const nextConfig = {
       loader: 'ignore-loader',
     });
 
-    // Handle viem test actions by replacing with empty exports
+    // Ignore all viem test files completely
     config.module.rules.push({
       test: /node_modules\/viem\/_esm\/actions\/test\/.*\.js$/,
-      use: {
-        loader: 'string-replace-loader',
-        options: {
-          search: /[\s\S]*/,
-          replace: 'export const dropTransaction = () => {}; export const dumpState = () => {}; export const getAutomine = () => {}; export const getTxpoolContent = () => {}; export const getTxpoolStatus = () => {}; export const impersonateAccount = () => {}; export const increaseTime = () => {}; export const inspectTxpool = () => {}; export const loadState = () => {}; export const mine = () => {}; export const removeBlockTimestampInterval = () => {}; export const reset = () => {}; export const revert = () => {}; export const setAutomine = () => {}; export const setBalance = () => {}; export const setBlockGasLimit = () => {}; export const setBlockTimestampInterval = () => {}; export const setCoinbase = () => {}; export const setCode = () => {}; export const setIntervalMining = () => {}; export const setLoggingEnabled = () => {}; export const setMinGasPrice = () => {}; export const setNextBlockBaseFeePerGas = () => {}; export const setNextBlockTimestamp = () => {}; export const setNonce = () => {}; export const setRpcUrl = () => {}; export const setStorageAt = () => {}; export const snapshot = () => {}; export const stopImpersonatingAccount = () => {};'
-        }
-      }
+      loader: 'ignore-loader',
     });
 
-    // Handle specific missing viem test files
+    // Handle viem actions index to remove test imports
     config.module.rules.push({
-      test: /node_modules\/viem\/_esm\/actions\/test\/(dropTransaction|dumpState|getAutomine|getTxpoolContent|getTxpoolStatus)\.js$/,
+      test: /node_modules\/viem\/_esm\/actions\/index\.js$/,
       use: {
         loader: 'string-replace-loader',
         options: {
-          search: /[\s\S]*/,
-          replace: (match, p1, offset, string, groups) => {
-            const filename = string.match(/\/(dropTransaction|dumpState|getAutomine|getTxpoolContent|getTxpoolStatus)\.js$/)?.[1];
-            return `export const ${filename} = () => {};`;
-          }
+          multiple: [
+            {
+              search: /export \* from ['"]\.\/test\/.*?['"]/g,
+              replace: '// Test exports removed',
+            },
+            {
+              search: /export \{ .* \} from ['"]\.\/test\/.*?['"]/g,
+              replace: '// Test exports removed',
+            }
+          ]
         }
       }
     });
