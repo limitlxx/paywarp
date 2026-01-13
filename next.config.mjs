@@ -33,6 +33,21 @@ const nextConfig = {
       }
     });
 
+    // Handle specific missing viem test files
+    config.module.rules.push({
+      test: /node_modules\/viem\/_esm\/actions\/test\/(dropTransaction|dumpState|getAutomine|getTxpoolContent|getTxpoolStatus)\.js$/,
+      use: {
+        loader: 'string-replace-loader',
+        options: {
+          search: /[\s\S]*/,
+          replace: (match, p1, offset, string, groups) => {
+            const filename = string.match(/\/(dropTransaction|dumpState|getAutomine|getTxpoolContent|getTxpoolStatus)\.js$/)?.[1];
+            return `export const ${filename} = () => {};`;
+          }
+        }
+      }
+    });
+
     // Handle viem test decorators
     config.module.rules.push({
       test: /node_modules\/viem\/_esm\/clients\/decorators\/test\.js$/,

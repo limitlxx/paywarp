@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button"
 import { RadarScanner } from "@/components/radar-scanner"
 import { CommunityStats, UserRegistration } from "@/components/user-registration"
 import WrappedReportViewer from "@/components/wrapped-report-viewer"
+import { LaunchFeature } from "@/components/launch-feature"
 import { X, ArrowRight, SkipForward, Network } from "lucide-react" // Added Network icon
 import { useSwitchChain, useChainId } from "wagmi" // NEW: Import Wagmi hooks for switching
 import { mantleMainnet, mantleSepolia } from "@/lib/networks" // NEW: Import your chain defs (adjust path if needed)
@@ -47,7 +48,7 @@ export function OnboardingFlow() {
   const { isConnected, connect, address, isHistoryLoading, syncHistory, transactions } = useWallet()
   const { hasActivity, isLoading: isWrappedLoading, reports, currentReport, generateReports } = useWrappedReports()
   const { isRegistered, refetchRegistrationStatus } = useUserRegistration()
-  const [step, setStep] = useState<"landing" | "registration" | "syncing" | "wrapped" | "dashboard">("landing")
+  const [step, setStep] = useState<"landing" | "registration" | "syncing" | "launch" | "wrapped" | "dashboard">("landing")
   const [logs, setLogs] = useState<string[]>([])
   const [showWrappedViewer, setShowWrappedViewer] = useState(false)
   const [syncComplete, setSyncComplete] = useState(false)
@@ -178,15 +179,13 @@ export function OnboardingFlow() {
       
       // Add a delay to ensure all data is loaded
       const navigationTimer = setTimeout(() => {
-        // For newly registered users, check if they have activity
+        // For newly registered users, show launch feature first
         if (justRegistered) {
-          if (hasActivity && transactions.length > 0) {
-            console.log("New user with activity - redirecting to wrapped page")
-            router.push("/wrapped")
-          } else {
-            console.log("New user with no activity - going to dashboard")
-            setStep("dashboard")
-          }
+          console.log("New user - showing launch feature")
+          setStep("launch")
+        } else if (hasActivity && transactions.length > 0) {
+          console.log("Existing user with activity - redirecting to wrapped page")
+          router.push("/wrapped")
         } else if (shouldShowWrapped()) {
           setStep("wrapped")
         } else {
@@ -197,6 +196,18 @@ export function OnboardingFlow() {
       return () => clearTimeout(navigationTimer)
     }
   }, [syncComplete, isHistoryLoading, isWrappedLoading, shouldShowWrapped, generateReports, justRegistered, hasActivity, router, transactions.length])
+
+  // Handle launch feature completion
+  const handleLaunchComplete = useCallback(() => {
+    if (address) {
+      // After launch feature, check if user has activity for wrapped
+      if (hasActivity && transactions.length > 0 && shouldShowWrapped()) {
+        setStep("wrapped")
+      } else {
+        setStep("dashboard")
+      }
+    }
+  }, [address, hasActivity, transactions.length, shouldShowWrapped])
 
   // Handle final navigation to dashboard
   useEffect(() => {
@@ -425,6 +436,18 @@ export function OnboardingFlow() {
                 </motion.p>
               ))}
             </div>
+          </motion.div>
+        )}
+
+        {step === "launch" && (
+          <motion.div
+            key="launch"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="z-10 w-full h-full"
+          >
+            <LaunchFeature onComplete={handleLaunchComplete} />
           </motion.div>
         )}
 
