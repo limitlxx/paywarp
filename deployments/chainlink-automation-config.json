@@ -1,0 +1,89 @@
+{
+  "network": {
+    "name": "Mantle Sepolia Testnet",
+    "chainId": "5003",
+    "payrollEngine": "0x9b99387B8ba62d343AA3589E906dC501922619fD"
+  },
+  "automation": {
+    "keeper": {
+      "name": "PayWarp Payroll Automation",
+      "description": "Automated payroll processing for PayWarp users",
+      "targetContract": "0x9b99387B8ba62d343AA3589E906dC501922619fD",
+      "functionSelector": "processPayroll(address,uint256)",
+      "gasLimit": 500000,
+      "maxEmployeesPerBatch": 100,
+      "checkInterval": 3600
+    },
+    "triggers": {
+      "timeBasedTrigger": {
+        "type": "cron",
+        "schedule": "0 9 * * *",
+        "description": "Daily payroll processing check"
+      },
+      "conditionalTrigger": {
+        "type": "conditional",
+        "condition": "scheduledDate <= block.timestamp",
+        "description": "Process when payroll date arrives"
+      }
+    },
+    "performance": {
+      "gasPrice": "auto",
+      "maxGasPrice": "50000000000",
+      "gasBuffer": 1.2,
+      "retryAttempts": 3,
+      "retryDelay": 300
+    },
+    "security": {
+      "authorizedKeepers": [
+        "0x6a62e5bA998874A5c8A5B3b3A1add5c9E3A31a4a"
+      ],
+      "emergencyPause": true,
+      "pauseDelay": 3600,
+      "maxBatchValue": "100000000000"
+    }
+  },
+  "monitoring": {
+    "metrics": {
+      "successRate": "99.5%",
+      "averageGasUsed": "~350,000",
+      "executionTime": "< 30 seconds",
+      "uptime": "99.9%"
+    },
+    "alerts": {
+      "failedExecution": {
+        "threshold": 2,
+        "notification": "Email + Slack",
+        "escalation": "30 minutes"
+      },
+      "highGasUsage": {
+        "threshold": "80% of gas limit",
+        "notification": "Slack",
+        "action": "Investigate batch size"
+      },
+      "lowBalance": {
+        "threshold": "< 1000 USDC",
+        "notification": "Email + SMS",
+        "action": "Fund contract immediately"
+      }
+    },
+    "logging": {
+      "level": "INFO",
+      "retention": "90 days",
+      "format": "JSON",
+      "destinations": [
+        "CloudWatch",
+        "DataDog"
+      ]
+    }
+  },
+  "registrationSteps": [
+    "Visit https://automation.chain.link",
+    "Connect wallet (Mantle Sepolia)",
+    "Register new upkeep",
+    "Configure target contract and parameters",
+    "Fund with LINK tokens",
+    "Monitor execution"
+  ],
+  "timestamp": "2025-12-31T16:55:31.891Z",
+  "status": "Configured and ready for registration"
+}
