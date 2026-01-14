@@ -3,13 +3,13 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { LayoutDashboard, Layers, History, Settings, Scan } from "lucide-react"
+import { LayoutDashboard, Settings, Scan } from "lucide-react"
 
 const navItems = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard" },
-  { icon: Layers, label: "Buckets", href: "/buckets" },
+  // { icon: Layers, label: "Buckets", href: "/buckets" }, // Hidden for gradual release
   { icon: Scan, label: "Expenses", href: "/expenses" },
-  { icon: History, label: "History", href: "/history" },
+  // { icon: History, label: "History", href: "/history" }, // Hidden for gradual release
   { icon: Settings, label: "Settings", href: "/settings" },
 ]
 

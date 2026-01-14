@@ -109,11 +109,11 @@ export function OnboardingFlow() {
     }
   }, [isConnected, step, isRegistered, router, address])
 
-  // Handle successful registration - move to syncing for first-time users only
+  // Handle successful registration - move directly to launch page
   const handleRegistrationComplete = useCallback(() => {
-    console.log("Registration completed, moving to syncing step")
+    console.log("Registration completed, moving to launch page")
     setJustRegistered(true) // Mark that user just registered
-    setStep("syncing")
+    setStep("launch")
   }, [])
 
   // Handle sync process - only for newly registered users
