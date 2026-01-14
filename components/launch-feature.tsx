@@ -114,7 +114,7 @@ export function LaunchFeature({ onComplete }: LaunchFeatureProps) {
                 </h1>
                 
                 <p className="text-xl text-white/80 max-w-2xl mx-auto">
-                  You're all set up! Let's explore the key features that will help you manage your finances like a pro.
+                 Join the Alpha testers! Explore this key features that will help you manage your finances like a pro.
                 </p>
               </div>
 
