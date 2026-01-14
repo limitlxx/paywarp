@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { Loader2, Users, CheckCircle, AlertCircle, Droplet } from 'lucide-react';
+import { Loader2, Users, CheckCircle, AlertCircle, Droplet, Network } from 'lucide-react';
 import { useUserRegistration, generateRegistrationMessage, createMessageHash } from '../lib/user-registration';
 import { CONTRACT_ADDRESSES } from '../types/contracts';
 import { toast } from 'sonner';
@@ -186,19 +186,58 @@ export function UserRegistration({ onRegistrationComplete, showCommunityStats = 
     return (
       <Card className="w-full max-w-md mx-auto">
         <CardHeader className="text-center">
-          <CardTitle>Registration Coming Soon</CardTitle>
+          <CardTitle>Switch to Mantle Sepolia</CardTitle>
           <CardDescription>
-            User registration will be available once the UserRegistry contract is deployed
+            PayWarp is currently available on Mantle Sepolia testnet. Please switch your network to continue.
           </CardDescription>
           {showCommunityStats && (
             <div className="flex items-center justify-center gap-2 mt-2">
               <Badge variant="secondary" className="flex items-center gap-1">
                 <Users className="h-3 w-3" />
-                {totalUsers > 0 ? `${totalUsers.toLocaleString()} registered users` : 'Registration system deploying...'}
+                {totalUsers > 0 ? `${totalUsers.toLocaleString()} registered users on Sepolia` : 'Join the Sepolia testnet'}
               </Badge>
             </div>
           )}
         </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground text-center mb-4">
+            Mantle Sepolia is a testnet where you can try PayWarp with free test tokens.
+          </p>
+          <Button
+            onClick={() => {
+              // Trigger network switch
+              if (typeof window !== 'undefined' && window.ethereum) {
+                window.ethereum.request({
+                  method: 'wallet_switchEthereumChain',
+                  params: [{ chainId: '0x138B' }], // Mantle Sepolia chainId in hex (5003)
+                }).catch((error: any) => {
+                  console.error('Failed to switch network:', error)
+                  // If network doesn't exist, add it
+                  if (error.code === 4902) {
+                    window.ethereum.request({
+                      method: 'wallet_addEthereumChain',
+                      params: [{
+                        chainId: '0x138B',
+                        chainName: 'Mantle Sepolia Testnet',
+                        nativeCurrency: {
+                          name: 'MNT',
+                          symbol: 'MNT',
+                          decimals: 18
+                        },
+                        rpcUrls: ['https://rpc.sepolia.mantle.xyz'],
+                        blockExplorerUrls: ['https://sepolia.mantlescan.xyz']
+                      }]
+                    })
+                  }
+                })
+              }
+            }}
+            className="w-full"
+          >
+            <Network className="mr-2 h-4 w-4" />
+            Switch to Mantle Sepolia
+          </Button>
+        </CardContent>
       </Card>
     );
   }

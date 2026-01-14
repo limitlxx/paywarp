@@ -8,11 +8,11 @@ if (!projectId) {
   throw new Error('NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID is not set')
 }
 
-// Configure wagmi with RainbowKit
+// Configure wagmi with RainbowKit - Default to Sepolia
 export const wagmiConfig = getDefaultConfig({
   appName: 'PayWarp',
   projectId,
-  chains: [mantleMainnet, mantleSepolia],
+  chains: [mantleSepolia, mantleMainnet], // Sepolia first as default
   ssr: true, // Enable server-side rendering support
 })
 

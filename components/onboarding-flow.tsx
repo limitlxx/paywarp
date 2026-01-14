@@ -55,6 +55,20 @@ export function OnboardingFlow() {
   const [justRegistered, setJustRegistered] = useState(false) // Track if user just completed registration
   const router = useRouter()
 
+  // NEW: Wagmi hooks for chain switching
+  const chainId = useChainId()
+  const { switchChain, isPending: isSwitching } = useSwitchChain()
+
+  // Auto-switch to Sepolia when wallet connects if not already on a supported network
+  useEffect(() => {
+    if (isConnected && chainId !== mantleSepolia.id && chainId !== mantleMainnet.id) {
+      console.log("Switching to Mantle Sepolia (default network)")
+      switchChain({ chainId: mantleSepolia.id }).catch(err => {
+        console.error("Failed to switch to Sepolia:", err)
+      })
+    }
+  }, [isConnected, chainId, switchChain])
+
   // Check if user should see wrapped display
   const shouldShowWrapped = useCallback(() => {
     if (!address || !hasActivity) return false
@@ -241,16 +255,12 @@ export function OnboardingFlow() {
     setShowWrappedViewer(!showWrappedViewer)
   }, [showWrappedViewer])
 
-  // NEW: Wagmi hooks for chain switching
-  const chainId = useChainId()
-  const { switchChain, isPending: isSwitching, error: switchError } = useSwitchChain()
-
-  // NEW: Determine target chain for toggle (Mantle Mainnet <-> Sepolia)
+  // NEW: Determine target chain for toggle - Default to Sepolia
   const getTargetChainId = useCallback(() => {
     if (chainId === mantleMainnet.id) return mantleSepolia.id
     if (chainId === mantleSepolia.id) return mantleMainnet.id
-    // Default to Mainnet if on unsupported chain
-    return mantleMainnet.id
+    // Default to Sepolia if on unsupported chain
+    return mantleSepolia.id
   }, [chainId])
 
   // NEW: Handle network switch
@@ -258,11 +268,7 @@ export function OnboardingFlow() {
     const targetId = getTargetChainId()
     try {
       await switchChain({ chainId: targetId })
-      // Optional: Toast success or refetch data after switch
-      // toast.success(`Switched to ${targetId === mantleMainnet.id ? 'Mantle Mainnet' : 'Mantle Sepolia'}`)
     } catch (err) {
-      // Handle user rejection or errors
-      // toast.error('Network switch failed. Please try again.')
       console.error('Network switch error:', err)
     }
   }, [switchChain, getTargetChainId])
@@ -271,7 +277,7 @@ export function OnboardingFlow() {
   const getCurrentChainName = useCallback(() => {
     if (chainId === mantleMainnet.id) return 'Mantle Mainnet'
     if (chainId === mantleSepolia.id) return 'Mantle Sepolia'
-    return 'Unsupported Network'
+    return 'Switch to Sepolia'
   }, [chainId])
 
   const onboardingContent = (
