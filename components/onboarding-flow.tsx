@@ -57,15 +57,17 @@ export function OnboardingFlow() {
 
   // NEW: Wagmi hooks for chain switching
   const chainId = useChainId()
-  const { switchChain, isPending: isSwitching } = useSwitchChain()
+  const { switchChain, isPending: isSwitching, error: switchError } = useSwitchChain()
 
   // Auto-switch to Sepolia when wallet connects if not already on a supported network
   useEffect(() => {
     if (isConnected && chainId !== mantleSepolia.id && chainId !== mantleMainnet.id) {
       console.log("Switching to Mantle Sepolia (default network)")
-      switchChain({ chainId: mantleSepolia.id }).catch(err => {
+      try {
+        switchChain({ chainId: mantleSepolia.id })
+      } catch (err) {
         console.error("Failed to switch to Sepolia:", err)
-      })
+      }
     }
   }, [isConnected, chainId, switchChain])
 
