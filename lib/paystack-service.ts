@@ -204,10 +204,14 @@ export class PaystackService {
         throw new Error('Invalid user address')
       }
 
+      // Round to 6 decimals (USDC precision) to avoid underflow errors
+      const roundedAmount = Math.floor(usdcAmount * 1e6) / 1e6
+      console.log(`💰 Funding wallet: ${usdcAmount} → ${roundedAmount} USDC (rounded to 6 decimals)`)
+
       // Check managed wallet balance
       const managedWalletBalance = await this.getManagedWalletUSDCBalance()
-      if (managedWalletBalance < usdcAmount) {
-        throw new Error('Insufficient USDC in managed wallet')
+      if (managedWalletBalance < roundedAmount) {
+        throw new Error(`Insufficient USDC in managed wallet. Need ${roundedAmount}, have ${managedWalletBalance}`)
       }
 
       // Create USDC contract instance
@@ -216,21 +220,141 @@ export class PaystackService {
         [
           'function transfer(address to, uint256 amount) returns (bool)',
           'function balanceOf(address account) view returns (uint256)',
-          'function decimals() view returns (uint8)'
+          'function decimals() view returns (uint8)',
+          'event Transfer(address indexed from, address indexed to, uint256 value)'
         ],
         this.managedWallet
       )
 
-      // Convert amount to proper decimals (USDC has 6 decimals)
+      // Get decimals (should be 6 for USDC)
       const decimals = await usdcContract.decimals()
-      const transferAmount = ethers.parseUnits(usdcAmount.toString(), decimals)
+      console.log(`📊 USDC decimals: ${decimals}`)
+      
+      // Convert amount to proper decimals - use rounded amount with fixed precision
+      const amountString = roundedAmount.toFixed(Number(decimals))
+      console.log(`🔢 Amount string for parseUnits: ${amountString}`)
+      
+      const transferAmount = ethers.parseUnits(amountString, decimals)
+      console.log(`✅ Transfer amount (wei): ${transferAmount.toString()}`)
 
-      // Execute transfer
-      const tx = await usdcContract.transfer(userAddress, transferAmount)
-      await tx.wait()
-
-      return { success: true, txHash: tx.hash }
+      // Execute transfer with error handling for duplicate transactions
+      console.log(`📤 Transferring ${roundedAmount} USDC to ${userAddress}...`)
+      
+      try {
+        const tx = await usdcContract.transfer(userAddress, transferAmount)
+        console.log(`⏳ Waiting for transaction confirmation...`)
+        const receipt = await tx.wait()
+        console.log(`✅ Transfer complete! TX: ${tx.hash}`)
+        
+        return { success: true, txHash: tx.hash }
+      } catch (txError: any) {
+        // Check if error is "already known" (duplicate transaction)
+        if (txError.message?.includes('already known') || 
+            txError.message?.includes('nonce too low') ||
+            txError.code === 'NONCE_EXPIRED' ||
+            txError.code === 'REPLACEMENT_UNDERPRICED') {
+          console.log(`⚠️ Transaction already submitted, searching for it...`)
+          
+          try {
+            // First, check pending transactions in mempool
+            const nonce = await this.managedWallet.getNonce('pending')
+            const latestNonce = await this.managedWallet.getNonce('latest')
+            
+            console.log(`📊 Nonce check - Pending: ${nonce}, Latest: ${latestNonce}`)
+            
+            // If there's a pending transaction, wait for it to be mined
+            if (nonce > latestNonce) {
+              console.log(`⏳ Pending transaction detected, waiting up to 30s for confirmation...`)
+              const maxWait = 30000 // 30 seconds
+              const checkInterval = 2000 // Check every 2 seconds
+              let waited = 0
+              
+              while (waited < maxWait) {
+                await new Promise(resolve => setTimeout(resolve, checkInterval))
+                waited += checkInterval
+                
+                const updatedLatestNonce = await this.managedWallet.getNonce('latest')
+                if (updatedLatestNonce >= nonce) {
+                  console.log(`✅ Transaction confirmed! Nonce updated to ${updatedLatestNonce}`)
+                  break
+                }
+                console.log(`⏳ Still waiting... (${waited}ms elapsed)`)
+              }
+            }
+            
+            // Get recent transactions to find the existing one
+            const currentBlock = await this.provider.getBlockNumber()
+            const recentBlocks = 200 // Check last 200 blocks (more thorough)
+            const fromBlock = Math.max(0, currentBlock - recentBlocks)
+            
+            // Query Transfer events from managed wallet to user
+            const filter = usdcContract.filters.Transfer(this.config.managedWalletAddress, userAddress)
+            const events = await usdcContract.queryFilter(filter, fromBlock, currentBlock)
+            
+            console.log(`📋 Found ${events.length} recent transfer events`)
+            
+            // Find matching transaction by amount (with some tolerance for rounding)
+            const matchingEvent = events.find(event => {
+              // Type guard to ensure we have an EventLog with args
+              if (!('args' in event) || !event.args) return false
+              const eventAmount = event.args[2] || event.args.value // Transfer event: (from, to, value)
+              if (!eventAmount) return false
+              
+              // Check if amounts match (exact match)
+              const amountMatch = eventAmount.toString() === transferAmount.toString()
+              
+              // Also check timestamp - should be recent (within last 5 minutes)
+              const block = event.blockNumber
+              const isRecent = currentBlock - block < 100 // ~100 blocks for safety
+              
+              return amountMatch && isRecent
+            })
+            
+            if (matchingEvent) {
+              console.log(`✅ Found existing transaction: ${matchingEvent.transactionHash}`)
+              return { success: true, txHash: matchingEvent.transactionHash }
+            }
+            
+            // If still not found, it may still be pending
+            console.log(`🔍 Transaction not found in recent blocks, checking if still pending...`)
+            
+            // One more nonce check to see if transaction is truly pending
+            const finalPendingNonce = await this.managedWallet.getNonce('pending')
+            const finalLatestNonce = await this.managedWallet.getNonce('latest')
+            
+            if (finalPendingNonce > finalLatestNonce) {
+              console.log(`⏳ Transaction is still pending in mempool`)
+              return { 
+                success: true, 
+                txHash: 'pending',
+                error: 'Transaction submitted and pending confirmation. Please check your wallet in a few minutes.'
+              }
+            }
+            
+            // Transaction should have been mined but we can't find it
+            // This is unusual but not necessarily an error
+            console.log(`⚠️ Transaction may have been mined but not found in recent events`)
+            return { 
+              success: true, 
+              txHash: 'unknown',
+              error: 'Transaction was submitted. Please check your wallet to confirm receipt.'
+            }
+          } catch (queryError) {
+            console.error('❌ Error querying events:', queryError)
+            // If we can't query events, assume success since transaction was submitted
+            return { 
+              success: true, 
+              txHash: 'unknown',
+              error: 'Transaction submitted but could not verify. Please check your wallet.'
+            }
+          }
+        }
+        
+        // For other errors, rethrow
+        throw txError
+      }
     } catch (error) {
+      console.error('❌ Fund wallet error:', error)
       return { 
         success: false, 
         error: error instanceof Error ? error.message : 'Unknown error' 
@@ -278,18 +402,39 @@ export class PaystackService {
   }
 
   /**
-   * Calculate equivalent crypto amount for fiat payment
+   * Calculate equivalent crypto amount for fiat payment using real-time rates
    */
   private async calculateCryptoAmount(fiatAmount: number, fiatCurrency: 'NGN' | 'USD'): Promise<number> {
-    // For simplicity, assuming 1:1 USD to USDC conversion
-    // In production, you'd fetch real-time exchange rates
+    // For USD, 1:1 conversion to USDC
     if (fiatCurrency === 'USD') {
-      return fiatAmount
+      // Round to 6 decimals (USDC precision)
+      return Math.floor(fiatAmount * 1e6) / 1e6
     }
     
-    // For NGN, use a mock exchange rate (in production, fetch from reliable source)
-    const usdNgnRate = 1500 // Mock rate: 1 USD = 1500 NGN
-    return fiatAmount / usdNgnRate
+    // For NGN, fetch real-time exchange rate from CurrencyManager
+    try {
+      const { getCurrencyManager } = await import('./currency-manager')
+      const currencyManager = getCurrencyManager()
+      const rates = await currencyManager.getCurrentRates()
+      
+      // Convert NGN to USD, then to USDC (1:1)
+      const usdAmount = fiatAmount / rates.USD_NGN
+      
+      // Round to 6 decimals (USDC precision) to avoid underflow errors
+      const roundedAmount = Math.floor(usdAmount * 1e6) / 1e6
+      
+      console.log(`💱 Currency conversion: ₦${fiatAmount} → $${usdAmount} → ${roundedAmount} USDC (rate: ₦${rates.USD_NGN}/USD)`)
+      
+      return roundedAmount
+    } catch (error) {
+      console.error('Failed to fetch exchange rate, using fallback:', error)
+      // Fallback to conservative rate if fetch fails
+      const fallbackRate = 1438 // Conservative mid-market rate
+      const usdAmount = fiatAmount / fallbackRate
+      
+      // Round to 6 decimals
+      return Math.floor(usdAmount * 1e6) / 1e6
+    }
   }
 
   /**
@@ -322,6 +467,20 @@ export class PaystackService {
           throw new Error(`Failed to fund user wallet: ${fundingResult.error}`)
         }
 
+        // Get real exchange rate for record
+        let exchangeRate = 1
+        if (currency !== 'USD') {
+          try {
+            const { getCurrencyManager } = await import('./currency-manager')
+            const currencyManager = getCurrencyManager()
+            const rates = await currencyManager.getCurrentRates()
+            exchangeRate = rates.USD_NGN
+          } catch (error) {
+            console.error('Failed to fetch exchange rate for record:', error)
+            exchangeRate = 1438 // Fallback rate
+          }
+        }
+
         // Create deposit record
         const depositRecord: DepositRecord = {
           id: `deposit_${reference}`,
@@ -331,7 +490,7 @@ export class PaystackService {
           fiatCurrency: currency as 'NGN' | 'USD',
           cryptoAmount,
           cryptoToken: 'USDC',
-          exchangeRate: currency === 'USD' ? 1 : 1500, // Mock rate
+          exchangeRate,
           status: 'success',
           timestamp: new Date(),
           userAddress,

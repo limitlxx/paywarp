@@ -3,6 +3,7 @@
 import { Button } from "@/components/ui/button"
 import { BottomNav } from "@/components/bottom-nav"
 import { SimpleHeader } from "@/components/simple-header"
+import { DashboardHeader } from "@/components/dashboard-header"
 import { AuthGuard } from "@/components/auth-guard"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -18,18 +19,19 @@ import {
   Droplet,
   Scan,
   Loader2,
-  Play,
+  CheckCircle2Icon,
 } from "lucide-react"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts"
 import Link from "next/link"
 import { useState, useMemo, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { useAccount } from "wagmi"
-import { EnhancedDepositModal } from "@/components/modals/enhanced-deposit-modal"
+import { DepositModal } from "@/components/modals/deposit-modal"
 import { useTransactionHistory } from "@/hooks/use-transaction-history"
 import { useWrappedReports } from "@/hooks/use-wrapped-reports"
-import { useWalletTxSync } from "@/hooks/useWalletTxSync"
-import { formatEther } from "viem"
+import { useBucketBalances } from "@/hooks/use-bucket-balances"
+import { AuditTray } from "@/components/audit-tray"
+import { formatUnits } from "viem"
 
 // Preference storage utilities for wrapped redirect
 const WRAPPED_VIEWED_KEY = 'paywarp-wrapped-viewed'
@@ -45,40 +47,22 @@ export default function Dashboard() {
   const { address } = useAccount()
   const [isDepositOpen, setIsDepositOpen] = useState(false)
   const { transactions, isLoading, refreshHistory, syncHistory, fromCache, error } = useTransactionHistory()
+  const { buckets, totalBalance, formattedTotalBalance, splitConfig, nonce, hasData: hasBucketData, refetch: refetchBuckets } = useBucketBalances()
   const { hasActivity } = useWrappedReports()
-  const walletSync = useWalletTxSync({ autoStart: false })
   const [isRefreshing, setIsRefreshing] = useState(false)
 
-  // Handle payment callback from Paystack
+  // Debug: Log bucket data
   useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search)
-    const paymentStatus = urlParams.get('payment')
-    
-    if (paymentStatus) {
-      // Clear the URL parameter
-      const newUrl = window.location.pathname
-      window.history.replaceState({}, '', newUrl)
-      
-      if (paymentStatus === 'success') {
-        // Trigger payment verification
-        const checkPayment = async () => {
-          try {
-            const { PaystackStorage } = await import('@/lib/paystack-storage')
-            const callback = PaystackStorage.consumeCallback()
-            
-            if (callback && callback.status === 'success') {
-              // Payment verification will be handled by the enhanced deposit hook
-              console.log('Payment callback detected, verification will be handled automatically')
-            }
-          } catch (error) {
-            console.error('Error checking payment callback:', error)
-          }
-        }
-        
-        checkPayment()
-      }
+    if (address) {
+      console.log('📊 BUCKET DATA DEBUG:')
+      console.log('  Address:', address)
+      console.log('  Has Bucket Data:', hasBucketData)
+      console.log('  Total Balance:', formattedTotalBalance, 'USDC')
+      console.log('  Nonce:', nonce.toString())
+      console.log('  Buckets:', buckets.map(b => `${b.name}: ${b.formattedBalance}`))
+      console.log('  Split Config:', splitConfig)
     }
-  }, [])
+  }, [address, hasBucketData, formattedTotalBalance, nonce, buckets, splitConfig])
 
   // Check if user should be redirected to wrapped page
   useEffect(() => {
@@ -98,80 +82,80 @@ export default function Dashboard() {
     }
   }, [address, hasActivity, isLoading, router])
 
-  // Calculate real statistics from transactions
+  // Calculate real statistics from transactions AND bucket balances
   const stats = useMemo(() => {
     const now = new Date()
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
     
+    // Use contract transactions only (managed wallet transactions)
+    const allTxs = transactions
+    
     // Filter transactions from last 30 days
-    const recentTransactions = transactions.filter(tx => 
+    const recentTransactions = allTxs.filter(tx => 
       tx.timestamp >= thirtyDaysAgo
     )
 
-    // Calculate total balance (sum of all deposits minus withdrawals)
-    const totalBalance = transactions.reduce((sum, tx) => {
-      if (tx.type === 'deposit' || tx.type === 'split') {
-        return sum + Number(formatEther(tx.amount))
-      } else if (tx.type === 'withdrawal') {
-        return sum - Number(formatEther(tx.amount))
-      }
-      return sum
-    }, 0)
+    // Use REAL bucket balance from contract (this is the actual on-chain balance)
+    const totalBalance = Number(formattedTotalBalance)
 
     // Calculate monthly inflow (deposits + splits)
     const monthlyInflow = recentTransactions.reduce((sum, tx) => {
-      if (tx.type === 'deposit' || tx.type === 'split') {
-        return sum + Number(formatEther(tx.amount))
+      if (tx.type === 'deposit' || tx.type === 'split' || tx.type === 'erc20_in') {
+        return sum + Number(formatUnits(tx.amount, tx.decimals || 18))
       }
       return sum
     }, 0)
 
     // Calculate monthly outflow (withdrawals + transfers out)
     const monthlyOutflow = recentTransactions.reduce((sum, tx) => {
-      if (tx.type === 'withdrawal') {
-        return sum + Number(formatEther(tx.amount))
+      if (tx.type === 'withdrawal' || tx.type === 'erc20_out') {
+        return sum + Number(formatUnits(tx.amount, tx.decimals || 18))
       }
       return sum
     }, 0)
 
-    // Calculate spendable balance (simplified - would need bucket data in real app)
-    const spendableBalance = totalBalance * 0.3 // Assume 30% is spendable
+    // Calculate spendable balance from actual bucket data
+    const spendableBucket = buckets.find(b => b.name === 'spendable')
+    const spendableBalance = spendableBucket ? Number(spendableBucket.formattedBalance) : totalBalance * 0.05
 
     return {
       totalBalance,
       monthlyInflow,
       monthlyOutflow,
       spendableBalance,
-      transactionCount: transactions.length,
+      transactionCount: allTxs.length,
       recentCount: recentTransactions.length
     }
-  }, [transactions])
+  }, [transactions, formattedTotalBalance, buckets])
 
   // Generate chart data from last 7 days
   const chartData = useMemo(() => {
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
     const now = new Date()
     const data = []
+    
+    // Use contract transactions only
+    const allTxs = transactions
 
     for (let i = 6; i >= 0; i--) {
       const date = new Date(now.getTime() - i * 24 * 60 * 60 * 1000)
       const dayName = days[date.getDay()]
       
-      const dayTransactions = transactions.filter(tx => {
+      const dayTransactions = allTxs.filter(tx => {
         const txDate = new Date(tx.timestamp)
         return txDate.toDateString() === date.toDateString()
       })
 
       const inflow = dayTransactions.reduce((sum, tx) => {
-        if (tx.type === 'deposit' || tx.type === 'split') {
-          return sum + Number(formatEther(tx.amount))
+        if (tx.type === 'deposit' || tx.type === 'split' || tx.type === 'erc20_in') {
+          return sum + Number(formatUnits(tx.amount, tx.decimals || 18))
         }
         return sum
       }, 0)
 
       const outflow = dayTransactions.reduce((sum, tx) => {
-        if (tx.type === 'withdrawal') {
-          return sum + Number(formatEther(tx.amount))
+        if (tx.type === 'withdrawal' || tx.type === 'erc20_out') {
+          return sum + Number(formatUnits(tx.amount, tx.decimals || 18))
         }
         return sum
       }, 0)
@@ -182,234 +166,92 @@ export default function Dashboard() {
     return data
   }, [transactions])
 
-  // Handle refresh - use wallet sync for better UX
+  // Handle refresh - use API refresh
   const handleRefresh = async () => {
-    if (!walletSync.isSyncing) {
-      walletSync.startSync({ maxBlocks: 500 })
-    }
+    await refreshHistory()
   }
   
   return (
     <AuthGuard>
       <div className="min-h-screen gradient-bg pb-24">
-        <SimpleHeader />
+        <DashboardHeader />
+        {/* <SimpleHeader /> */}
 
         <main className="p-4 sm:p-6 lg:p-8">
           <div className="max-w-7xl mx-auto space-y-6">
-            {/* Debug Component - Remove this after fixing */}
-            {/** <DebugTransactionStatus /> **/}
-
-            {/* Wallet Sync Control Panel - NEW */}
-            <Card className="glass-card border-purple-500/20">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-purple-500/20">
-                      <Activity className="w-4 h-4 text-purple-400" />
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-foreground">Wallet Transaction Sync</h3>
-                      <p className="text-xs text-muted-foreground">
-                        {walletSync.isSyncing ? (
-                          <span className="flex items-center gap-1">
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                            Syncing wallet transactions...
-                            {walletSync.syncProgress && (
-                              <span className="ml-1">
-                                ({walletSync.syncProgress.percentage}%)
-                              </span>
-                            )}
-                          </span>
-                        ) : walletSync.isPaused ? (
-                          <span className="text-yellow-400">Sync paused</span>
-                        ) : (
-                          `${walletSync.transactions.length} transactions synced`
-                        )}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {!walletSync.isSyncing ? (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="glass-card border-green-500/30 text-green-400 hover:bg-green-500/10"
-                        onClick={() => walletSync.startSync({ maxBlocks: 10000 })}
-                      >
-                        <Play className="w-3 h-3 mr-1" />
-                        Start Sync
-                      </Button>
-                    ) : (
-                      <>
-                        {!walletSync.isPaused ? (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="glass-card border-yellow-500/30 text-yellow-400 hover:bg-yellow-500/10"
-                            onClick={walletSync.pauseSync}
-                          >
-                            <RefreshCw className="w-3 h-3 mr-1" />
-                            Pause
-                          </Button>
-                        ) : (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="glass-card border-green-500/30 text-green-400 hover:bg-green-500/10"
-                            onClick={walletSync.resumeSync}
-                          >
-                            <Play className="w-3 h-3 mr-1" />
-                            Resume
-                          </Button>
-                        )}
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="glass-card border-red-500/30 text-red-400 hover:bg-red-500/10"
-                          onClick={walletSync.stopSync}
-                        >
-                          Stop
-                        </Button>
-                      </>
-                    )}
-                  </div>
-                </div>
-                
-                {/* Progress Bar */}
-                {walletSync.syncProgress && (
-                  <div className="mt-3">
-                    <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                      <span>Block {walletSync.syncProgress.current} of {walletSync.syncProgress.total}</span>
-                      <span>{walletSync.syncProgress.percentage}%</span>
-                    </div>
-                    <div className="h-2 bg-white/10 rounded-full overflow-hidden">
-                      <div 
-                        className="h-full bg-gradient-to-r from-purple-500 to-blue-500 transition-all duration-300"
-                        style={{ width: `${walletSync.syncProgress.percentage}%` }}
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {/* Sync Status with Particles */}
-                {walletSync.isSyncing && (
-                  <div className="mt-3 flex items-center gap-2 text-xs text-purple-400">
-                    <div className="flex gap-1">
-                      <div className="w-1 h-1 bg-purple-500 rounded-full animate-pulse" />
-                      <div className="w-1 h-1 bg-blue-500 rounded-full animate-pulse delay-100" />
-                      <div className="w-1 h-1 bg-purple-500 rounded-full animate-pulse delay-200" />
-                    </div>
-                    <span>Scanning blockchain for your transactions...</span>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
             {/* Summary Row */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex flex-col gap-4">
               <div className="space-y-1">
-                <h1 className="text-3xl font-bold text-foreground text-glow-neon">Dashboard</h1>
-                <p className="text-muted-foreground text-sm">
+                <h1 className="text-2xl sm:text-3xl font-bold text-foreground text-glow-neon">Dashboard</h1>
+                <p className="text-muted-foreground text-xs sm:text-sm">
                   {isLoading ? (
                     <span className="flex items-center gap-2">
                       <Loader2 className="w-3 h-3 animate-spin" />
                       Loading your data...
                     </span>
-                  ) : walletSync.isSyncing ? (
-                    <span className="flex items-center gap-2">
-                      <RefreshCw className="w-3 h-3 animate-spin" />
-                      Syncing wallet transactions...
-                      {walletSync.syncProgress && (
-                        <span className="text-blue-400">
-                          ({walletSync.syncProgress.percentage}%)
-                        </span>
-                      )}
-                    </span>
                   ) : stats.transactionCount > 0 ? (
-                    <span>
-                      {walletSync.transactions.length} wallet transactions • {stats.transactionCount} contract transactions
-                      {fromCache && <span className="text-purple-400 ml-2">• Cached data</span>}
+                    <span className="flex flex-wrap items-center gap-1">
+                      <span>{stats.transactionCount} transactions</span>
+                      {fromCache && <span className="text-purple-400">• Cached data</span>}
                     </span>
                   ) : (
                     'Track your DeFi budgets and earnings'
                   )}
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Button
                   variant="outline"
                   size="sm"
-                  className="glass-card border-green-500/30 text-green-400 hover:bg-green-500/10 gap-2 bg-transparent"
+                  className="glass-card border-green-500/30 text-green-400 hover:bg-green-500/10 gap-2 bg-transparent text-xs sm:text-sm h-8 sm:h-9"
                   asChild
                 >
                   <Link href="/faucet">
-                    <Droplet className="w-4 h-4" />
-                    Faucet
+                    <Droplet className="w-3 h-3 sm:w-4 sm:h-4" />
+                    <span className="hidden xs:inline">Faucet</span>
                   </Link>
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
-                  className="glass-card border-blue-500/30 text-blue-400 hover:bg-blue-500/10 gap-2 bg-transparent"
-                  onClick={() => {
-                    if (!walletSync.isSyncing) {
-                      walletSync.startSync({ maxBlocks: 1000 })
-                    } else if (walletSync.isPaused) {
-                      walletSync.resumeSync()
-                    } else {
-                      walletSync.pauseSync()
-                    }
-                  }}
-                  disabled={false}
+                  className="glass-card border-blue-500/30 text-blue-400 hover:bg-blue-500/10 gap-2 bg-transparent text-xs sm:text-sm h-8 sm:h-9"
+                  onClick={handleRefresh}
+                  disabled={isLoading}
                 >
-                  {!walletSync.isSyncing ? (
-                    <>
-                      <Play className="w-4 h-4" />
-                      Start Sync
-                    </>
-                  ) : walletSync.isPaused ? (
-                    <>
-                      <Play className="w-4 h-4" />
-                      Resume
-                    </>
-                  ) : (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      Pause Sync
-                    </>
-                  )}
+                  <RefreshCw className={`w-3 h-3 sm:w-4 sm:h-4 ${isLoading ? 'animate-spin' : ''}`} />
+                  <span className="hidden sm:inline">Refresh</span>
                 </Button>
-                <Button
+                {/* <Button
                   variant="outline"
                   size="sm"
-                  className="glass-card border-purple-500/30 text-purple-400 hover:bg-purple-500/10 gap-2 bg-transparent"
+                  className="glass-card border-purple-500/30 text-purple-400 hover:bg-purple-500/10 gap-2 bg-transparent text-xs sm:text-sm h-8 sm:h-9 hidden sm:flex"
                 >
-                  <Scan className="w-4 h-4" />
-                  Scan QR
-                </Button>
-                <Link href="/wrapped">
+                  <Scan className="w-3 h-3 sm:w-4 sm:h-4" />
+                  <span>Scan QR</span>
+                </Button> */}
+                <Link href="/wrapped" className="hidden sm:block">
                   <Button
                     variant="outline"
                     size="sm"
-                    className="glass-card border-purple-500/30 text-purple-400 hover:bg-purple-500/10 gap-2 bg-transparent"
+                    className="glass-card border-purple-500/30 text-purple-400 hover:bg-purple-500/10 gap-2 bg-transparent text-xs sm:text-sm h-8 sm:h-9"
                   >
-                    <Activity className="w-4 h-4" />
-                    View Wrapped
+                    <Activity className="w-3 h-3 sm:w-4 sm:h-4" />
+                    <span>View Wrapped</span>
                   </Button>
                 </Link>
-                <Button
+                {/* <Button
                   variant="outline"
                   size="sm"
-                  className="glass-card border-purple-500/30 text-purple-400 hover:bg-purple-500/10 gap-2 bg-transparent"
+                  className="glass-card border-purple-500/30 text-purple-400 hover:bg-purple-500/10 gap-2 bg-transparent text-xs sm:text-sm h-8 sm:h-9 hidden lg:flex"
                 >
-                  <Share2 className="w-4 h-4" />
-                  Share
-                </Button>
+                  <Share2 className="w-3 h-3 sm:w-4 sm:h-4" />
+                  <span>Share</span>
+                </Button> */}
               </div>
             </div>
 
             {/* Empty State */}
-            {!isLoading && stats.transactionCount === 0 && !error && (
+            {!isLoading && stats.transactionCount === 0 && !hasBucketData && !error && (
               <Card className="glass-card border-purple-500/20">
                 <CardContent className="p-12 text-center">
                   <div className="flex flex-col items-center gap-4">
@@ -464,8 +306,8 @@ export default function Dashboard() {
               </Card>
             )}
 
-          {/* Stats - Only show when there are transactions and no errors */}
-          {(isLoading || (stats.transactionCount > 0 && !error)) && (
+          {/* Stats - Show when there are transactions OR bucket data, and no errors */}
+          {(isLoading || (stats.transactionCount > 0 && !error) || (hasBucketData && !error)) && (
             <>
               {/* Summary Row */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -658,10 +500,13 @@ export default function Dashboard() {
           </Link>
             </>
           )}
+
+          {/* Audit Tray */}
+          <AuditTray />
         </div>
       </main>
 
-      <EnhancedDepositModal open={isDepositOpen} onOpenChange={setIsDepositOpen} bucketId="auto-split" />
+      <DepositModal open={isDepositOpen} onOpenChange={setIsDepositOpen} bucketId="auto-split" />
       
       <BottomNav />
     </div>

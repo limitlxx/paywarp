@@ -160,6 +160,44 @@ export function useTransactionHistory(): UseTransactionHistoryReturn {
     setError(null)
 
     try {
+      // Try API first
+      try {
+        console.log('📡 Refreshing transactions from managed wallet API...')
+        const response = await fetch(`/api/managed-wallet/transactions?address=${address}`)
+        
+        if (response.ok) {
+          const result = await response.json()
+          
+          if (result.success) {
+            // Transform API transactions to BlockchainTransaction format
+            const apiTransactions: BlockchainTransaction[] = result.data.transactions.map((tx: any) => ({
+              id: tx.hash,
+              hash: tx.hash,
+              blockNumber: BigInt(tx.blockNumber),
+              timestamp: new Date(tx.timestamp),
+              type: tx.type,
+              amount: BigInt(tx.amount),
+              decimals: 18,
+              tokenSymbol: 'USDC',
+              description: tx.description,
+              status: tx.status,
+              fromBucket: tx.fromBucket,
+              toBucket: tx.toBucket,
+              bucket: tx.bucket,
+            }))
+            
+            console.log(`✅ Refreshed ${apiTransactions.length} transactions from API`)
+            setTransactions(apiTransactions)
+            setFromCache(false)
+            setIsLoading(false)
+            return
+          }
+        }
+      } catch (apiError) {
+        console.log('API refresh failed, falling back to blockchain sync:', apiError)
+      }
+      
+      // Fallback to blockchain sync
       const newTransactions = await syncServiceRef.current.syncIncrementalTransactions(address)
       
       if (newTransactions.length > 0) {
@@ -261,7 +299,61 @@ export function useTransactionHistory(): UseTransactionHistoryReturn {
           setIsLoading(true)
           setError(null)
           
-          // Try to load from cache only
+          // First try to load from API (managed wallet transactions)
+          try {
+            console.log('📡 Fetching transactions from managed wallet API...')
+            const response = await fetch(`/api/managed-wallet/transactions?address=${address}`)
+            
+            if (response.ok) {
+              const result = await response.json()
+              
+              if (result.success && result.data.transactions.length > 0) {
+                // Transform API transactions to BlockchainTransaction format
+                const apiTransactions: BlockchainTransaction[] = result.data.transactions.map((tx: any) => ({
+                  id: tx.hash,
+                  hash: tx.hash,
+                  blockNumber: BigInt(tx.blockNumber),
+                  timestamp: new Date(tx.timestamp),
+                  type: tx.type,
+                  amount: BigInt(tx.amount),
+                  decimals: 18,
+                  tokenSymbol: 'USDC',
+                  description: tx.description,
+                  status: tx.status,
+                  fromBucket: tx.fromBucket,
+                  toBucket: tx.toBucket,
+                  bucket: tx.bucket,
+                }))
+                
+                console.log(`✅ Loaded ${apiTransactions.length} transactions from API`)
+                setTransactions(apiTransactions)
+                setFromCache(false)
+                
+                // Generate wrapped reports
+                const yearsWithActivity = new Set(
+                  apiTransactions.map(tx => tx.timestamp.getFullYear())
+                )
+                
+                const reports: WrappedReport[] = []
+                for (const year of yearsWithActivity) {
+                  const report = TransactionSyncService.generateWrappedData(
+                    apiTransactions, 
+                    year, 
+                    address
+                  )
+                  reports.push(report)
+                }
+                
+                setWrappedReports(reports.sort((a, b) => b.year - a.year))
+                setIsLoading(false)
+                return
+              }
+            }
+          } catch (apiError) {
+            console.log('API fetch failed, falling back to cache:', apiError)
+          }
+          
+          // Fallback to cache if API fails
           const result = await syncServiceRef.current!.getCachedTransactions(
             address, 
             {

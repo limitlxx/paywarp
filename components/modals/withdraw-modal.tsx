@@ -14,10 +14,15 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Wallet, ArrowUpRight, CheckCircle2, Loader2, AlertCircle } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
-import { useBlockchainBuckets } from "@/hooks/use-blockchain-buckets"
-import { useWallet } from "@/hooks/use-wallet.tsx"
+import { useBucketBalances } from "@/hooks/use-bucket-balances"
+import { useWallet } from "@/hooks/use-wallet"
 import { useToast } from "@/hooks/use-toast"
-import type { BucketType } from "@/lib/types"
+import { useContract, useContractWrite } from "@/lib/contracts"
+import { useNetwork } from "@/hooks/use-network"
+import { parseUnits } from "viem"
+import { usePublicClient } from "wagmi"
+
+type BucketType = 'billings' | 'savings' | 'growth' | 'instant' | 'spendable'
 
 interface WithdrawModalProps {
   open: boolean
@@ -29,11 +34,16 @@ interface WithdrawModalProps {
 export function WithdrawModal({ open, onOpenChange, bucketId, bucketName }: WithdrawModalProps) {
   const [step, setStep] = useState<"amount" | "processing" | "success">("amount")
   const [amount, setAmount] = useState("")
-  const { withdrawFromBucket, getBucket, isLoading } = useBlockchainBuckets()
+  const { buckets, isLoading: bucketsLoading, refetch } = useBucketBalances()
   const { isConnected, connect } = useWallet()
   const { toast } = useToast()
+  const { currentNetwork } = useNetwork()
+  const bucketVaultWriteContract = useContractWrite('bucketVault', currentNetwork)
+  const publicClient = usePublicClient()
+  const [isWithdrawing, setIsWithdrawing] = useState(false)
 
-  const bucket = getBucket(bucketId)
+  // Get bucket data from real contract data
+  const bucket = buckets.find(b => b.name === bucketId)
   const isSpendable = bucketId === "spendable"
 
   const handleWithdraw = async () => {
@@ -50,13 +60,77 @@ export function WithdrawModal({ open, onOpenChange, bucketId, bucketName }: With
       }
     }
 
+    if (!bucketVaultWriteContract) {
+      toast({
+        title: "Contract Not Available",
+        description: "Please switch to Sepolia testnet.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (!amount || Number(amount) <= 0) {
+      toast({
+        title: "Invalid Amount",
+        description: "Please enter a valid withdrawal amount.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (!bucket || Number(amount) > Number(bucket.formattedBalance)) {
+      toast({
+        title: "Insufficient Balance",
+        description: "Withdrawal amount exceeds available balance.",
+        variant: "destructive",
+      })
+      return
+    }
+
     setStep("processing")
+    setIsWithdrawing(true)
     
     try {
       const numAmount = Number(amount)
-      await withdrawFromBucket(bucketId, numAmount)
-      setStep("success")
+      
+      console.log('💸 Initiating withdrawal:', { 
+        bucketId, 
+        amount: numAmount,
+        balance: bucket.formattedBalance,
+      })
+      
+      // Contract expects 6 decimals for USDC
+      const amountIn6Decimals = parseUnits(amount, 6)
+      
+      const hash = await bucketVaultWriteContract.write.withdrawFromBucket([
+        bucketId,
+        amountIn6Decimals
+      ])
+      
+      console.log('📝 Withdrawal transaction hash:', hash)
+      
+      // Wait for confirmation
+      if (publicClient) {
+        const receipt = await publicClient.waitForTransactionReceipt({ hash })
+        
+        if (receipt.status === 'success') {
+          console.log('✅ Withdrawal successful')
+          
+          // Refresh balances
+          await refetch()
+          
+          setStep("success")
+          
+          toast({
+            title: "Withdrawal Complete",
+            description: `Successfully withdrew $${numAmount.toFixed(2)} from ${bucketName}`,
+          })
+        } else {
+          throw new Error('Transaction failed')
+        }
+      }
     } catch (err) {
+      console.error('❌ Withdrawal error:', err)
       const errorMessage = err instanceof Error ? err.message : 'Withdrawal failed'
       toast({
         title: "Withdrawal Failed",
@@ -64,6 +138,8 @@ export function WithdrawModal({ open, onOpenChange, bucketId, bucketName }: With
         variant: "destructive",
       })
       setStep("amount") // Go back to amount input
+    } finally {
+      setIsWithdrawing(false)
     }
   }
 
@@ -100,7 +176,7 @@ export function WithdrawModal({ open, onOpenChange, bucketId, bucketName }: With
                   </Label>
                   <span className="text-xs text-muted-foreground">
                     Available:{" "}
-                    <span className="text-foreground font-mono font-bold">${bucket?.balance.toLocaleString()}</span>
+                    <span className="text-foreground font-mono font-bold">${bucket?.formattedBalance || "0.00"}</span>
                   </span>
                 </div>
                 <div className="relative">
@@ -170,7 +246,7 @@ export function WithdrawModal({ open, onOpenChange, bucketId, bucketName }: With
         {step === "amount" && (
           <DialogFooter>
             <Button
-              disabled={!amount || Number(amount) <= 0 || Number(amount) > (bucket?.balance || 0) || isLoading}
+              disabled={!amount || Number(amount) <= 0 || Number(amount) > Number(bucket?.formattedBalance || 0) || isWithdrawing}
               onClick={handleWithdraw}
               className="w-full bg-indigo-600 hover:bg-indigo-500 text-white h-12 text-lg font-bold flex gap-2"
             >

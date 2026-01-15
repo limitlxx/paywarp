@@ -369,7 +369,8 @@ export function OnboardingFlow() {
               </div>
 
               <div className="text-[10px] text-zinc-600 font-medium tracking-wide">
-                built with ☕ by <span className="underline underline-offset-4 decoration-zinc-800">Limitlxx</span>
+                Built with ❤️ by <span className="underline underline-offset-4 decoration-zinc-800">Limitlxx</span>
+        
               </div>
             </div>
           </motion.div>

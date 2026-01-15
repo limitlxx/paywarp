@@ -6,6 +6,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getPaystackService } from '@/lib/paystack-service'
 
+// In-memory cache to prevent duplicate processing
+const processingCache = new Map<string, { processing: boolean; result?: any; timestamp: number }>()
+const CACHE_DURATION = 60000 // 1 minute
+
 export async function POST(request: NextRequest) {
   try {
     const { reference } = await request.json()
@@ -17,25 +21,64 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Check if already processing or recently processed
+    const cached = processingCache.get(reference)
+    if (cached) {
+      const age = Date.now() - cached.timestamp
+      
+      if (cached.processing && age < CACHE_DURATION) {
+        console.log(`⏳ Payment ${reference} is already being processed, waiting for result...`)
+        // Wait for the processing to complete (up to 30 seconds)
+        const maxWaitTime = 30000
+        const checkInterval = 500
+        let waited = 0
+        
+        while (waited < maxWaitTime) {
+          await new Promise(resolve => setTimeout(resolve, checkInterval))
+          waited += checkInterval
+          
+          const updated = processingCache.get(reference)
+          if (updated?.result) {
+            console.log(`✅ Processing completed, returning cached result for ${reference}`)
+            return NextResponse.json(updated.result)
+          }
+          
+          if (!updated?.processing) {
+            // Processing finished but no result - break and retry
+            break
+          }
+        }
+        
+        console.log(`⚠️ Waited ${waited}ms but no result yet, will retry processing`)
+      }
+      
+      if (cached.result && age < CACHE_DURATION) {
+        console.log(`✅ Returning cached result for ${reference} (${age}ms old)`)
+        return NextResponse.json(cached.result)
+      }
+    }
+
+    // Mark as processing
+    processingCache.set(reference, { processing: true, timestamp: Date.now() })
+    console.log(`🔄 Processing payment verification for ${reference}`)
+
     // Verify payment with Paystack
     const paystackService = getPaystackService()
     const verification = await paystackService.verifyPayment(reference)
     
     if (!verification.success) {
-      return NextResponse.json(
-        { success: false, error: verification.error || 'Payment verification failed' },
-        { status: 400 }
-      )
+      const errorResult = { success: false, error: verification.error || 'Payment verification failed' }
+      processingCache.set(reference, { processing: false, result: errorResult, timestamp: Date.now() })
+      return NextResponse.json(errorResult, { status: 400 })
     }
 
     const paymentData = verification.data
     
     // Check if payment was successful
     if (paymentData.status !== 'success') {
-      return NextResponse.json(
-        { success: false, error: 'Payment was not successful' },
-        { status: 400 }
-      )
+      const errorResult = { success: false, error: 'Payment was not successful' }
+      processingCache.set(reference, { processing: false, result: errorResult, timestamp: Date.now() })
+      return NextResponse.json(errorResult, { status: 400 })
     }
 
     // Extract metadata
@@ -43,10 +86,9 @@ export async function POST(request: NextRequest) {
     const cryptoAmount = paymentData.metadata?.cryptoAmount
     
     if (!userAddress || !cryptoAmount) {
-      return NextResponse.json(
-        { success: false, error: 'Missing payment metadata' },
-        { status: 400 }
-      )
+      const errorResult = { success: false, error: 'Missing payment metadata' }
+      processingCache.set(reference, { processing: false, result: errorResult, timestamp: Date.now() })
+      return NextResponse.json(errorResult, { status: 400 })
     }
 
     // Fund user wallet with USDC
@@ -57,13 +99,12 @@ export async function POST(request: NextRequest) {
     )
     
     if (!fundingResult.success) {
-      return NextResponse.json(
-        { success: false, error: fundingResult.error || 'Failed to fund wallet' },
-        { status: 500 }
-      )
+      const errorResult = { success: false, error: fundingResult.error || 'Failed to fund wallet' }
+      processingCache.set(reference, { processing: false, result: errorResult, timestamp: Date.now() })
+      return NextResponse.json(errorResult, { status: 500 })
     }
 
-    return NextResponse.json({
+    const successResult = {
       success: true,
       data: {
         reference,
@@ -73,7 +114,13 @@ export async function POST(request: NextRequest) {
         txHash: fundingResult.txHash,
         userAddress
       }
-    })
+    }
+
+    // Cache the successful result
+    processingCache.set(reference, { processing: false, result: successResult, timestamp: Date.now() })
+    console.log(`✅ Payment ${reference} processed successfully, cached result`)
+
+    return NextResponse.json(successResult)
 
   } catch (error) {
     console.error('Payment verification error:', error)
@@ -83,6 +130,16 @@ export async function POST(request: NextRequest) {
     )
   }
 }
+
+// Clean up old cache entries periodically
+setInterval(() => {
+  const now = Date.now()
+  for (const [key, value] of processingCache.entries()) {
+    if (now - value.timestamp > CACHE_DURATION) {
+      processingCache.delete(key)
+    }
+  }
+}, CACHE_DURATION)
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)

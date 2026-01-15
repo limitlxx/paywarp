@@ -21,20 +21,24 @@ import {
   AlertCircle
 } from "lucide-react"
 import { format } from "date-fns"
-import { useSavingsGoals } from "@/hooks/use-savings-goals"
 import { SavingsGoalModal } from "@/components/modals/savings-goal-modal"
 import { cn } from "@/lib/utils"
 
+// Import the SavingsGoal type with an alias to avoid conflicts
+import type { SavingsGoal as SavingsGoalType } from "@/hooks/use-savings-goals"
+
+// Import the hook with a different approach
+import * as SavingsGoalsHook from "@/hooks/use-savings-goals"
+
 export function SavingsGoalsManager() {
-  const { 
-    goals, 
-    isLoading, 
-    error, 
-    contributeToGoal, 
-    getActiveGoals, 
-    getCompletedGoals, 
-    getTotalProgress 
-  } = useSavingsGoals()
+  const hookResult = SavingsGoalsHook.useSavingsGoals()
+  const goals = hookResult.goals
+  const isLoading = hookResult.isLoading
+  const error = hookResult.error
+  const contributeToGoal = hookResult.contributeToGoal
+  const getActiveGoals = hookResult.getActiveGoals
+  const getCompletedGoals = hookResult.getCompletedGoals
+  const getTotalProgress = hookResult.getTotalProgress
   
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [contributionAmounts, setContributionAmounts] = useState<Record<number, string>>({})
@@ -182,7 +186,7 @@ export function SavingsGoalsManager() {
             </Card>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {activeGoals.map((goal) => (
+              {activeGoals.map((goal: SavingsGoalType) => (
                 <Card key={goal.id} className="glass-card border-purple-500/20">
                   <CardHeader>
                     <div className="flex items-start justify-between">
@@ -295,7 +299,7 @@ export function SavingsGoalsManager() {
             </Card>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {completedGoals.map((goal) => (
+              {completedGoals.map((goal: SavingsGoalType) => (
                 <Card key={goal.id} className="glass-card border-green-500/20">
                   <CardHeader>
                     <div className="flex items-start justify-between">

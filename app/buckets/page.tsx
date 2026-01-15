@@ -10,17 +10,20 @@ import { DepositModal } from "@/components/modals/deposit-modal"
 import { TransferModal } from "@/components/modals/transfer-modal"
 import { useState, useEffect, useMemo } from "react"
 import { Button } from "@/components/ui/button"
-import { useOptimizedBlockchainBuckets } from "@/hooks/use-optimized-blockchain-buckets"
 import { useWallet } from "@/hooks/use-wallet"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useMobileCapabilities, useMobileRenderOptimization, useMobilePerformanceMonitoring } from "@/lib/mobile-optimization"
 import { useLoadingManager } from "@/lib/loading-state-manager"
 import { useAnimationPerformanceMonitoring } from "@/lib/animation-optimizer"
 import { NetworkGuard } from "@/components/network-guard"
+import { DashboardHeader } from "@/components/dashboard-header"
+import { useBucketBalances } from "@/hooks/use-bucket-balances"
+import { useAccount } from "wagmi"
 
 export default function BucketsPage() {
   const [isDepositOpen, setIsDepositOpen] = useState(false)
   const [isTransferOpen, setIsTransferOpen] = useState(false)
+  const { address, isConnected } = useAccount()
   
   // Performance optimizations
   const capabilities = useMobileCapabilities()
@@ -29,17 +32,33 @@ export default function BucketsPage() {
   const { metrics: animationMetrics } = useAnimationPerformanceMonitoring()
   const loadingManager = useLoadingManager()
   
+  // Get real bucket data from contract
   const { 
-    buckets, 
+    buckets: contractBuckets, 
+    totalBalance,
+    formattedTotalBalance,
+    splitConfig,
+    nonce,
     isLoading, 
-    error, 
-    isConnected, 
-    refreshBalances, 
-    clearError,
-    queueStatus
-  } = useOptimizedBlockchainBuckets()
+    isError,
+    hasData,
+    refetch: refreshBalances
+  } = useBucketBalances()
   
   const { connect } = useWallet()
+
+  // Debug: Log bucket data
+  useEffect(() => {
+    if (address) {
+      console.log('📊 BUCKETS PAGE - CONTRACT DATA:')
+      console.log('  Address:', address)
+      console.log('  Has Data:', hasData)
+      console.log('  Total Balance:', formattedTotalBalance, 'USDC')
+      console.log('  Nonce:', nonce.toString())
+      console.log('  Buckets:', contractBuckets.map(b => `${b.name}: ${b.formattedBalance}`))
+      console.log('  Split Config:', splitConfig)
+    }
+  }, [address, hasData, formattedTotalBalance, nonce, contractBuckets, splitConfig])
 
   // Memoized bucket icons for performance
   const bucketIcons = useMemo(() => ({
@@ -49,6 +68,52 @@ export default function BucketsPage() {
     instant: Zap,
     spendable: Wallet,
   }), [])
+
+  // Memoized bucket colors
+  const bucketColors = useMemo(() => ({
+    billings: "#EF4444",
+    savings: "#3B82F6",
+    growth: "#EAB308",
+    instant: "#22C55E",
+    spendable: "#94A3B8",
+  }), [])
+
+  // Memoized bucket descriptions
+  const bucketDescriptions = useMemo(() => ({
+    billings: "Automated expenses & bills",
+    savings: "Long-term goal oriented funds",
+    growth: "DeFi yield optimization",
+    instant: "Team payroll & salaries",
+    spendable: "Available for immediate use",
+  }), [])
+
+  // Transform contract buckets to display format
+  const transformedBuckets = useMemo(() => {
+    if (!contractBuckets || contractBuckets.length === 0) return []
+    
+    return contractBuckets.map(bucket => {
+      const balance = Number(bucket.formattedBalance)
+      const totalBal = Number(formattedTotalBalance)
+      const percentage = totalBal > 0 ? Math.round((balance / totalBal) * 100) : 0
+      
+      return {
+        id: bucket.name as "billings" | "savings" | "growth" | "instant" | "spendable",
+        name: bucket.name.charAt(0).toUpperCase() + bucket.name.slice(1),
+        balance: balance,
+        percentage: percentage,
+        color: bucketColors[bucket.name as keyof typeof bucketColors],
+        icon: bucketIcons[bucket.name as keyof typeof bucketIcons],
+        isYielding: bucket.isYielding,
+        description: bucketDescriptions[bucket.name as keyof typeof bucketDescriptions],
+        apy: bucket.isYielding ? 4.5 : undefined, // TODO: Get real APY from contract
+        lastUpdated: new Date(),
+        usdyBalance: bucket.yieldBalance > 0n ? Number(bucket.formattedYield) : undefined,
+        musdBalance: undefined,
+        totalYieldEarned: bucket.yieldBalance > 0n ? Number(bucket.formattedYield) : undefined,
+        currentRWAValue: undefined,
+      }
+    })
+  }, [contractBuckets, formattedTotalBalance, bucketColors, bucketIcons, bucketDescriptions])
 
   // Performance monitoring
   useEffect(() => {
@@ -61,7 +126,6 @@ export default function BucketsPage() {
 
   // Optimized refresh handler with loading state
   const handleRefresh = async () => {
-    clearError()
     await loadingManager.withLoading(
       () => refreshBalances(),
       {
@@ -170,7 +234,15 @@ export default function BucketsPage() {
   ], [isConnected])
 
   // Determine which buckets to display
-  const displayBuckets = buckets.length > 0 ? buckets : fallbackBuckets
+  const displayBuckets = useMemo(() => {
+    // If we have real contract data, use it
+    if (transformedBuckets.length > 0 && hasData) {
+      return transformedBuckets
+    }
+    
+    // Otherwise show fallback buckets
+    return fallbackBuckets
+  }, [transformedBuckets, hasData, fallbackBuckets])
 
   // Mobile-optimized grid classes
   const gridClasses = useMemo(() => {
@@ -187,7 +259,8 @@ export default function BucketsPage() {
     <AuthGuard>
       <NetworkGuard>
         <div className="min-h-screen gradient-bg pb-24">
-        <SimpleHeader />
+        {/* <SimpleHeader /> */}
+        <DashboardHeader />
 
         <main className="p-4 sm:p-6 lg:p-8">
         <div className="max-w-7xl mx-auto space-y-6">
@@ -204,7 +277,7 @@ export default function BucketsPage() {
               {process.env.NODE_ENV === 'development' && (
                 <div className="text-xs text-muted-foreground/60 space-y-1">
                   <div>Performance: {capabilities.performanceLevel} | Connection: {capabilities.connectionType}</div>
-                  <div>Animation FPS: {animationMetrics.fps} | Queue: {queueStatus.queueLength} pending</div>
+                  <div>Animation FPS: {animationMetrics.fps} | Buckets: {transformedBuckets.length} | Has Data: {hasData ? 'Yes' : 'No'}</div>
                 </div>
               )}
             </div>
@@ -256,11 +329,11 @@ export default function BucketsPage() {
           </div>
 
           {/* Error Alert */}
-          {error && (
+          {isError && (
             <Alert className="border-red-500/20 bg-red-500/10">
               <AlertCircle className="h-4 w-4 text-red-400" />
               <AlertDescription className="text-red-300">
-                {error}
+                Failed to load bucket balances from contract. Please try refreshing.
                 <Button 
                   variant="link" 
                   className="text-red-400 p-0 ml-2 h-auto"
@@ -313,7 +386,7 @@ export default function BucketsPage() {
                   description={bucket.description}
                   apy={bucket.apy}
                   isLoading={isLoading}
-                  error={error}
+                  error={isError ? 'Failed to load' : undefined}
                   lastUpdated={bucket.lastUpdated}
                   onRefresh={handleRefresh}
                   usdyBalance={bucket.usdyBalance}

@@ -75,6 +75,14 @@ export function useSavingsGoals() {
   // Fetch all savings goals for the user
   const fetchSavingsGoals = useCallback(async () => {
     if (!bucketVaultContract || !address || !isConnected) {
+      console.log('🎯 Savings goals: Missing requirements', { 
+        hasContract: !!bucketVaultContract, 
+        hasAddress: !!address, 
+        isConnected 
+      })
+      setGoals([])
+      setGoalCount(0)
+      setIsLoading(false)
       return
     }
 
@@ -82,26 +90,35 @@ export function useSavingsGoals() {
       setIsLoading(true)
       setError(null)
 
+      console.log('🎯 Fetching savings goals for user:', address)
+
       // Get total goal count
       const totalGoals = await bucketVaultContract.read.userGoalCount([address])
       const goalCountNumber = Number(totalGoals)
       setGoalCount(goalCountNumber)
 
+      console.log('🎯 User goal count:', goalCountNumber)
+
       if (goalCountNumber === 0) {
+        console.log('🎯 No goals found, setting empty array')
         setGoals([])
+        setIsLoading(false)
         return
       }
 
       // Fetch all goals
       const goalPromises = Array.from({ length: goalCountNumber }, async (_, index) => {
         try {
+          console.log(`🎯 Fetching goal ${index}`)
           const contractGoal = await bucketVaultContract.read.getSavingsGoal([
             address,
             BigInt(index)
           ]) as ContractSavingsGoal
+          
+          console.log(`🎯 Goal ${index} data:`, contractGoal)
           return convertContractGoal(contractGoal, index)
         } catch (err) {
-          console.error(`Error fetching goal ${index}:`, err)
+          console.error(`🎯 Error fetching goal ${index}:`, err)
           return null
         }
       })
@@ -109,12 +126,17 @@ export function useSavingsGoals() {
       const fetchedGoals = await Promise.all(goalPromises)
       const validGoals = fetchedGoals.filter((goal): goal is SavingsGoal => goal !== null)
       
+      console.log('🎯 Valid goals found:', validGoals.length)
       setGoals(validGoals)
 
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch savings goals'
+      console.error('🎯 Error fetching savings goals:', err)
       setError(errorMessage)
-      console.error('Error fetching savings goals:', err)
+      
+      // Set empty state on error
+      setGoals([])
+      setGoalCount(0)
     } finally {
       setIsLoading(false)
     }

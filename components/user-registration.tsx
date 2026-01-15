@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { Loader2, Users, CheckCircle, AlertCircle, Droplet, Network } from 'lucide-react';
+import { Loader2, Users, CheckCircle, AlertCircle, Droplet, Network, Home } from 'lucide-react';
 import { useUserRegistration, generateRegistrationMessage, createMessageHash } from '../lib/user-registration';
 import { CONTRACT_ADDRESSES } from '../types/contracts';
 import { toast } from 'sonner';
@@ -253,6 +253,18 @@ export function UserRegistration({ onRegistrationComplete, showCommunityStats = 
           <CardDescription>
             Your wallet is already registered with PayWarp
           </CardDescription>
+
+          {/* Faucet Button */}
+        <Button
+          variant="outline"
+          className="w-full border-green-500/30 text-green-400 hover:bg-green-500/10"
+          asChild
+        >
+          <Link href="/dashboard">
+            <Home className="mr-2 h-4 w-4" />
+            Continue to Dashboard
+          </Link>
+        </Button>
         </CardHeader>
         {showCommunityStats && (
           <CardContent className="text-center">

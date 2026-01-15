@@ -30,6 +30,6 @@ next-env.d.ts
 /specs
 /server
 /broadcast
-/cache/deployments
-/scripts
+/cache/deployments 
 test*.js
+/implementations

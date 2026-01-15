@@ -42,6 +42,25 @@ export function PaystackDeposit({ onSuccess, onError }: PaystackDepositProps) {
   const [currency, setCurrency] = useState<'NGN' | 'USD'>('USD')
   const [email, setEmail] = useState('')
   const [isProcessing, setIsProcessing] = useState(false)
+  const [exchangeRate, setExchangeRate] = useState(1438) // Default NGN rate
+
+  /**
+   * Fetch real-time exchange rate on mount
+   */
+  useEffect(() => {
+    const fetchRate = async () => {
+      try {
+        const { getCurrencyManager } = await import('@/lib/currency-manager')
+        const currencyManager = getCurrencyManager()
+        const rates = await currencyManager.getCurrentRates()
+        setExchangeRate(rates.USD_NGN)
+      } catch (error) {
+        console.error('Failed to fetch exchange rate:', error)
+        // Keep default fallback rate
+      }
+    }
+    fetchRate()
+  }, [])
 
   /**
    * Handle payment initialization
@@ -106,7 +125,7 @@ export function PaystackDeposit({ onSuccess, onError }: PaystackDepositProps) {
   }
 
   /**
-   * Calculate equivalent amounts in different currencies
+   * Calculate equivalent amounts in different currencies using real-time rates
    */
   const getEquivalentAmounts = () => {
     if (!amount) return null
@@ -114,8 +133,8 @@ export function PaystackDeposit({ onSuccess, onError }: PaystackDepositProps) {
     const numericAmount = parseFloat(amount)
     if (isNaN(numericAmount)) return null
 
-    const usdAmount = currency === 'USD' ? numericAmount : numericAmount / 1500 // Mock NGN rate
-    const ngnAmount = currency === 'NGN' ? numericAmount : numericAmount * 1500
+    const usdAmount = currency === 'USD' ? numericAmount : numericAmount / exchangeRate
+    const ngnAmount = currency === 'NGN' ? numericAmount : numericAmount * exchangeRate
     const mntAmount = convertAmount(usdAmount, 'USD', 'MNT')
 
     return {

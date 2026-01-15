@@ -10,7 +10,6 @@ import { LiquidFill } from "@/components/liquid-fill"
 import { YieldBubbles } from "@/components/animated-bubbles"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Label } from "@/components/ui/label"
-import { Slider } from "@/components/ui/slider"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Input } from "@/components/ui/input"
@@ -29,105 +28,255 @@ import {
   ExternalLink,
   ArrowRightLeft,
   ArrowRight,
+  AlertCircle,
+  Loader2,
 } from "lucide-react"
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { ExpenseManager } from "@/components/expense-manager"
 import { PayrollManager } from "@/components/payroll-manager"
 import { SavingsGoalsManager } from "@/components/savings-goals-manager"
 import { SavingsGoalOverview } from "@/components/savings-goal-overview"
 import { DepositModal } from "@/components/modals/deposit-modal"
 import { WithdrawModal } from "@/components/modals/withdraw-modal"
+import { TransferModal } from "@/components/modals/transfer-modal"
 import { NetworkGuard } from "@/components/network-guard"
+import { useBucketBalances } from "@/hooks/use-bucket-balances"
+import { useTransactionHistory } from "@/hooks/use-transaction-history"
+import { useWallet } from "@/hooks/use-wallet"
+import { useToast } from "@/hooks/use-toast"
+import { useContract, useContractWrite } from "@/lib/contracts"
+import { useNetwork } from "@/hooks/use-network"
+import { parseUnits } from "viem"
+import { usePublicClient } from "wagmi"
+import { DashboardHeader } from "@/components/dashboard-header"
 
 type BucketType = 'billings' | 'savings' | 'growth' | 'instant' | 'spendable'
 
-const bucketData = {
+// Static bucket configuration for UI display
+const bucketConfig = {
   billings: { 
     id: 'billings',
     name: "Billings", 
     color: "#A100FF", 
     icon: Droplet, 
-    balance: "$12,450.00", 
-    percentage: 45, 
-    isYielding: false 
+    isYielding: false,
+    description: "Automated expenses & bills",
+    rwaProvider: "Ondo",
+    rwaType: "Receivables",
+    targetYield: "2.4%"
   },
   savings: {
     id: 'savings',
     name: "Savings",
     color: "#6366F1",
     icon: PiggyBank,
-    balance: "$45,230.00",
-    percentage: 82,
     isYielding: true,
+    description: "Long-term goal oriented funds",
+    rwaProvider: "Ondo",
+    rwaType: "Tokenized T-Bills",
+    targetYield: "4.5%"
   },
   growth: {
     id: 'growth',
     name: "Growth",
     color: "#3B82F6",
     icon: TrendingUp,
-    balance: "$28,120.00",
-    percentage: 35,
     isYielding: true,
+    description: "DeFi yield optimization",
+    rwaProvider: "Ondo",
+    rwaType: "Equity Vaults",
+    targetYield: "12.8%"
   },
   instant: { 
     id: 'instant',
     name: "Instant", 
     color: "#F59E0B", 
     icon: Zap, 
-    balance: "$15,800.00", 
-    percentage: 60, 
-    isYielding: false 
+    isYielding: false,
+    description: "Team payroll & salaries",
+    rwaProvider: "Mantle",
+    rwaType: "Payroll Yields",
+    targetYield: "3.2%"
   },
   spendable: { 
     id: 'spendable',
     name: "Spendable", 
     color: "#10B981", 
     icon: Wallet, 
-    balance: "$22,989.90", 
-    percentage: 100, 
-    isYielding: false 
+    isYielding: false,
+    description: "Available for immediate use",
+    rwaProvider: "Mantle",
+    rwaType: "Native Yield",
+    targetYield: "1.8%"
   },
-}
-
-const buckets = Object.values(bucketData)
-
-const updateBucketBalance = (id: string, amount: number) => {
-  // Simulate updating bucket balance
-  console.log(`Updating bucket ${id} with amount $${amount.toFixed(2)}`)
 }
 
 export default function BucketDetails() {
   const params = useParams()
   const router = useRouter()
   const id = params.id as string
-  const bucket = bucketData[id as keyof typeof bucketData] || bucketData.billings
-  const [goalAmount, setGoalAmount] = useState([5000])
-  const [depositAmount, setDepositAmount] = useState(0)
+  const bucket = bucketConfig[id as keyof typeof bucketConfig] || bucketConfig.billings
+  
+  // Hooks for real contract data
+  const { buckets, isLoading: bucketsLoading, refetch } = useBucketBalances()
+  const { transactions, isLoading: transactionsLoading } = useTransactionHistory()
+  const { isConnected, connect } = useWallet()
+  const { toast } = useToast()
+  const { currentNetwork } = useNetwork()
+  const bucketVaultWriteContract = useContractWrite('bucketVault', currentNetwork)
+  const publicClient = usePublicClient()
+  
+  // Local state
   const [isDepositOpen, setIsDepositOpen] = useState(false)
   const [isWithdrawOpen, setIsWithdrawOpen] = useState(false)
+  const [isTransferOpen, setIsTransferOpen] = useState(false)
+  const [transferFromId, setTransferFromId] = useState<BucketType>(id as BucketType)
+  const [transferToId, setTransferToId] = useState<BucketType>("savings")
+  const [transferAmount, setTransferAmount] = useState("")
+  const [isTransferring, setIsTransferring] = useState(false)
 
-  const rwaInfo = {
-    billings: { provider: "Ondo", type: "Receivables", yield: "2.4%" },
-    savings: { provider: "Ondo", type: "Tokenized T-Bills", yield: "4.5%" },
-    growth: { provider: "Ondo", type: "Equity Vaults", yield: "12.8%" },
-    instant: { provider: "Mantle", type: "Payroll Yields", yield: "3.2%" },
-    spendable: { provider: "Mantle", type: "Native Yield", yield: "1.8%" },
-  }[id as keyof typeof bucketData] || { provider: "PayWarp", type: "Native", yield: "0%" }
+  // Get real bucket data from contract
+  const realBucketData = useMemo(() => {
+    const contractBucket = buckets.find(b => b.name === id)
+    if (!contractBucket) {
+      return {
+        balance: 0,
+        formattedBalance: "0.00",
+        percentage: 0,
+        isYielding: bucket.isYielding
+      }
+    }
 
-  const handlePaystackDeposit = (amount: number) => {
-    console.log("[v0] Initiating Paystack deposit for amount:", amount)
-    // In a real app, this would call the Paystack API and then a server action to process the split
-    // For this demonstration, we'll simulate the auto-split logic
-    const splitDetails = buckets.map((b) => ({
-      id: b.id,
-      name: b.name,
-      splitAmount: (amount * b.percentage) / 100,
-    }))
+    // Calculate percentage based on total balance
+    const totalBalance = buckets.reduce((sum, b) => sum + Number(b.formattedBalance), 0)
+    const percentage = totalBalance > 0 ? (Number(contractBucket.formattedBalance) / totalBalance) * 100 : 0
 
-    splitDetails.forEach((detail) => {
-      updateBucketBalance(detail.id, detail.splitAmount)
-      console.log(`[v0] Auto-split: $${detail.splitAmount.toFixed(2)} routed to ${detail.name}`)
-    })
+    return {
+      balance: Number(contractBucket.formattedBalance),
+      formattedBalance: contractBucket.formattedBalance,
+      percentage: Math.min(percentage, 100),
+      isYielding: contractBucket.isYielding
+    }
+  }, [buckets, id, bucket.isYielding])
+
+  // Filter transactions for this bucket
+  const bucketTransactions = useMemo(() => {
+    return transactions
+      .filter(tx => 
+        tx.bucket === id || 
+        tx.fromBucket === id || 
+        tx.toBucket === id ||
+        (tx.type === 'deposit' && tx.description?.includes('split'))
+      )
+      .slice(0, 10) // Show last 10 transactions
+  }, [transactions, id])
+
+  // Handle internal transfer
+  const handleInternalTransfer = async () => {
+    if (!isConnected) {
+      try {
+        await connect()
+      } catch (err) {
+        toast({
+          title: "Connection Failed",
+          description: "Please connect your wallet to continue.",
+          variant: "destructive",
+        })
+        return
+      }
+    }
+
+    if (!bucketVaultWriteContract) {
+      toast({
+        title: "Contract Not Available",
+        description: "Please switch to Sepolia testnet.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (!transferAmount || Number(transferAmount) <= 0) {
+      toast({
+        title: "Invalid Amount",
+        description: "Please enter a valid transfer amount.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (transferFromId === transferToId) {
+      toast({
+        title: "Invalid Transfer",
+        description: "Please select different buckets for transfer.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    const fromBucket = buckets.find(b => b.name === transferFromId)
+    if (!fromBucket || Number(transferAmount) > Number(fromBucket.formattedBalance)) {
+      toast({
+        title: "Insufficient Balance",
+        description: "Transfer amount exceeds available balance.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setIsTransferring(true)
+    
+    try {
+      const numAmount = Number(transferAmount)
+      
+      console.log('🔄 Initiating internal transfer:', { 
+        from: transferFromId, 
+        to: transferToId, 
+        amount: numAmount,
+      })
+      
+      // Contract expects 6 decimals for USDC
+      const amountIn6Decimals = parseUnits(transferAmount, 6)
+      
+      const hash = await bucketVaultWriteContract.write.transferBetweenBuckets([
+        transferFromId,
+        transferToId,
+        amountIn6Decimals
+      ])
+      
+      console.log('📝 Transfer transaction hash:', hash)
+      
+      // Wait for confirmation
+      if (publicClient) {
+        const receipt = await publicClient.waitForTransactionReceipt({ hash })
+        
+        if (receipt.status === 'success') {
+          console.log('✅ Transfer successful')
+          
+          // Refresh balances
+          await refetch()
+          
+          // Clear form
+          setTransferAmount("")
+          
+          toast({
+            title: "Transfer Complete",
+            description: `Successfully moved $${numAmount.toFixed(2)} from ${bucket.name} to ${bucketConfig[transferToId].name}`,
+          })
+        } else {
+          throw new Error('Transaction failed')
+        }
+      }
+    } catch (err) {
+      console.error('❌ Transfer error:', err)
+      const errorMessage = err instanceof Error ? err.message : 'Transfer failed'
+      toast({
+        title: "Transfer Failed",
+        description: errorMessage,
+        variant: "destructive",
+      })
+    } finally {
+      setIsTransferring(false)
+    }
   }
 
   if (!bucket) return null
@@ -135,7 +284,8 @@ export default function BucketDetails() {
   return (
     <NetworkGuard>
       <div className="min-h-screen gradient-bg pb-24">
-      <SimpleHeader />
+      {/* <SimpleHeader /> */}
+      <DashboardHeader />
 
       <main className="p-4 sm:p-6 lg:p-8">
         <div className="max-w-6xl mx-auto space-y-8">
@@ -159,7 +309,7 @@ export default function BucketDetails() {
                   <div className="flex items-center gap-2 mt-1">
                     <Badge variant="outline" className="glass border-green-500/20 text-green-400 gap-1 px-2">
                       <ShieldCheck className="w-3 h-3" />
-                      {rwaInfo.provider} {rwaInfo.type}
+                      {bucket.rwaProvider} {bucket.rwaType}
                     </Badge>
                     <p className="text-xs text-muted-foreground">Active RWA connection</p>
                   </div>
@@ -170,7 +320,7 @@ export default function BucketDetails() {
             <div className="flex items-center gap-3">
               <div className="text-right hidden sm:block">
                 <p className="text-sm text-muted-foreground uppercase tracking-wider">Current Balance</p>
-                <p className="text-3xl font-bold text-foreground">{bucket.balance}</p>
+                <p className="text-3xl font-bold text-foreground">${realBucketData.formattedBalance}</p>
               </div>
               <div className="flex flex-col gap-2">
                 <Button
@@ -189,9 +339,9 @@ export default function BucketDetails() {
                   Withdraw
                 </Button>
               </div>
-              {bucket.isYielding && (
+              {realBucketData.isYielding && (
                 <div className="px-3 py-1 rounded-full bg-green-500/10 border border-green-500/20 text-green-400 text-sm font-medium">
-                  +8% APY
+                  +{bucket.targetYield} APY
                 </div>
               )}
             </div>
@@ -236,7 +386,7 @@ export default function BucketDetails() {
                   </CardHeader>
                   <CardContent className="h-[300px] relative">
                     <LiquidFill
-                      percentage={bucket.percentage}
+                      percentage={realBucketData.percentage}
                       color={bucket.color}
                       variant={
                         id === "growth"
@@ -252,7 +402,7 @@ export default function BucketDetails() {
                     <div className="absolute inset-0 flex items-center justify-center">
                       <div className="text-center bg-black/40 backdrop-blur-md p-6 rounded-full border border-white/10">
                         <p className="text-sm text-purple-300 uppercase tracking-widest font-bold">Capacity</p>
-                        <p className="text-5xl font-bold text-white">{bucket.percentage}%</p>
+                        <p className="text-5xl font-bold text-white">{realBucketData.percentage.toFixed(1)}%</p>
                       </div>
                     </div>
                   </CardContent>
@@ -275,16 +425,16 @@ export default function BucketDetails() {
                       <div className="flex justify-between items-center text-sm">
                         <span className="text-muted-foreground">Provider</span>
                         <span className="text-foreground font-medium flex items-center gap-1">
-                          {rwaInfo.provider} <ExternalLink className="w-3 h-3 opacity-50" />
+                          {bucket.rwaProvider} <ExternalLink className="w-3 h-3 opacity-50" />
                         </span>
                       </div>
                       <div className="flex justify-between items-center text-sm">
                         <span className="text-muted-foreground">Asset Type</span>
-                        <span className="text-foreground font-medium">{rwaInfo.type}</span>
+                        <span className="text-foreground font-medium">{bucket.rwaType}</span>
                       </div>
                       <div className="flex justify-between items-center text-sm">
                         <span className="text-muted-foreground">Target Yield</span>
-                        <span className="text-green-400 font-bold">{rwaInfo.yield} APY</span>
+                        <span className="text-green-400 font-bold">{bucket.targetYield} APY</span>
                       </div>
                     </CardContent>
                   </Card>
@@ -322,43 +472,40 @@ export default function BucketDetails() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {[
-                        {
-                          title: "Auto-split from Wallet",
-                          type: "Deposit",
-                          date: "2025-05-12",
-                          amount: "+$1,200.00",
-                          color: "text-green-400",
-                        },
-                        {
-                          title: "Salary Payout - Team A",
-                          type: "Payroll",
-                          date: "2025-05-10",
-                          amount: "-$5,400.00",
-                          color: "text-red-400",
-                        },
-                        {
-                          title: "DeFi Yield Accrual",
-                          type: "Yield",
-                          date: "2025-05-09",
-                          amount: "+$12.45",
-                          color: "text-green-400",
-                        },
-                        {
-                          title: "Internal Transfer to Savings",
-                          type: "Transfer",
-                          date: "2025-05-08",
-                          amount: "-$500.00",
-                          color: "text-red-400",
-                        },
-                      ].map((tx, i) => (
-                        <TableRow key={i} className="border-purple-500/5 hover:bg-white/5 transition-colors">
-                          <TableCell className="font-medium text-foreground">{tx.title}</TableCell>
-                          <TableCell className="text-muted-foreground">{tx.type}</TableCell>
-                          <TableCell className="text-muted-foreground font-mono">{tx.date}</TableCell>
-                          <TableCell className={`text-right font-bold ${tx.color}`}>{tx.amount}</TableCell>
+                      {transactionsLoading ? (
+                        <TableRow>
+                          <TableCell colSpan={4} className="text-center py-8">
+                            <Loader2 className="w-5 h-5 animate-spin mx-auto mb-2" />
+                            <p className="text-muted-foreground">Loading transactions...</p>
+                          </TableCell>
                         </TableRow>
-                      ))}
+                      ) : bucketTransactions.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={4} className="text-center py-8">
+                            <p className="text-muted-foreground">No transactions found for this bucket</p>
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        bucketTransactions.map((tx, i) => (
+                          <TableRow key={tx.id || i} className="border-purple-500/5 hover:bg-white/5 transition-colors">
+                            <TableCell className="font-medium text-foreground">
+                              {tx.description || `${tx.type.charAt(0).toUpperCase() + tx.type.slice(1)} Transaction`}
+                            </TableCell>
+                            <TableCell className="text-muted-foreground capitalize">{tx.type}</TableCell>
+                            <TableCell className="text-muted-foreground font-mono">
+                              {tx.timestamp.toLocaleDateString()}
+                            </TableCell>
+                            <TableCell className={`text-right font-bold ${
+                              tx.type === 'deposit' || tx.type === 'yield' || (tx.toBucket === id) 
+                                ? 'text-green-400' 
+                                : 'text-red-400'
+                            }`}>
+                              {tx.type === 'deposit' || tx.type === 'yield' || (tx.toBucket === id) ? '+' : '-'}
+                              ${(Number(tx.amount) / Math.pow(10, tx.decimals || 18)).toFixed(2)}
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
                     </TableBody>
                   </Table>
                 </CardContent>
@@ -431,16 +578,16 @@ export default function BucketDetails() {
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
                     <div className="space-y-2">
                       <Label>Source Bucket</Label>
-                      <Select defaultValue={id}>
+                      <Select value={transferFromId} onValueChange={(val) => setTransferFromId(val as BucketType)}>
                         <SelectTrigger className="glass border-white/10 h-12 bg-transparent">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent className="glass border-purple-500/20">
                           {buckets.map((b) => (
-                            <SelectItem key={b.name.toLowerCase()} value={b.name.toLowerCase()}>
+                            <SelectItem key={b.name} value={b.name}>
                               <div className="flex items-center gap-2">
-                                <b.icon className="w-4 h-4" style={{ color: b.color }} />
-                                {b.name} ({b.balance})
+                                <div className="w-4 h-4 rounded" style={{ backgroundColor: bucketConfig[b.name as keyof typeof bucketConfig]?.color }} />
+                                {bucketConfig[b.name as keyof typeof bucketConfig]?.name} (${b.formattedBalance})
                               </div>
                             </SelectItem>
                           ))}
@@ -456,16 +603,16 @@ export default function BucketDetails() {
 
                     <div className="space-y-2">
                       <Label>Target Bucket</Label>
-                      <Select defaultValue="savings">
+                      <Select value={transferToId} onValueChange={(val) => setTransferToId(val as BucketType)}>
                         <SelectTrigger className="glass border-white/10 h-12 bg-transparent">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent className="glass border-purple-500/20">
                           {buckets.map((b) => (
-                            <SelectItem key={b.name.toLowerCase()} value={b.name.toLowerCase()}>
+                            <SelectItem key={b.name} value={b.name}>
                               <div className="flex items-center gap-2">
-                                <b.icon className="w-4 h-4" style={{ color: b.color }} />
-                                {b.name}
+                                <div className="w-4 h-4 rounded" style={{ backgroundColor: bucketConfig[b.name as keyof typeof bucketConfig]?.color }} />
+                                {bucketConfig[b.name as keyof typeof bucketConfig]?.name}
                               </div>
                             </SelectItem>
                           ))}
@@ -480,12 +627,18 @@ export default function BucketDetails() {
                       <Input
                         type="number"
                         placeholder="0.00"
+                        value={transferAmount}
+                        onChange={(e) => setTransferAmount(e.target.value)}
                         className="glass border-white/10 h-14 text-2xl font-bold pl-8 bg-transparent"
                       />
                       <span className="absolute left-4 top-1/2 -translate-y-1/2 text-muted-foreground">$</span>
                       <Button
                         size="sm"
                         variant="ghost"
+                        onClick={() => {
+                          const fromBucket = buckets.find(b => b.name === transferFromId)
+                          if (fromBucket) setTransferAmount(fromBucket.formattedBalance)
+                        }}
                         className="absolute right-2 top-1/2 -translate-y-1/2 hover:bg-purple-500/20 text-purple-400 font-bold"
                       >
                         MAX
@@ -493,9 +646,17 @@ export default function BucketDetails() {
                     </div>
                   </div>
 
-                  <Button className="w-full gradient-primary text-white h-14 text-xl font-bold gap-2">
-                    <Zap className="w-5 h-5" />
-                    Initiate Zero-Slippage Warp
+                  <Button 
+                    onClick={handleInternalTransfer}
+                    disabled={isTransferring || !transferAmount || Number(transferAmount) <= 0 || transferFromId === transferToId}
+                    className="w-full gradient-primary text-white h-14 text-xl font-bold gap-2"
+                  >
+                    {isTransferring ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <Zap className="w-5 h-5" />
+                    )}
+                    {isTransferring ? "Processing Transfer..." : "Initiate Zero-Slippage Warp"}
                   </Button>
                 </CardContent>
               </Card>
@@ -594,6 +755,11 @@ export default function BucketDetails() {
         onOpenChange={setIsWithdrawOpen}
         bucketId={id as BucketType}
         bucketName={bucket.name}
+      />
+      <TransferModal
+        open={isTransferOpen}
+        onOpenChange={setIsTransferOpen}
+        initialFromId={id as BucketType}
       />
     </div>
   </NetworkGuard>
