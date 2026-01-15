@@ -491,7 +491,7 @@ export default function Dashboard() {
 
           {/* View All Buckets CTA */}
           <Link href="/buckets">
-            <Card className="glass-card border-purple-500/30 hover:border-purple-500/50 transition-colors cursor-pointer">
+            <Card className="m-3 glass-card border-purple-500/30 hover:border-purple-500/50 transition-colors cursor-pointer">
               <CardContent className="p-6 text-center">
                 <p className="text-lg font-semibold text-foreground mb-1">View All Buckets</p>
                 <p className="text-sm text-muted-foreground">Manage your budget allocations</p>
