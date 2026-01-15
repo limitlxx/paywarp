@@ -53,7 +53,7 @@ const BUCKET_VAULT_ABI = [
   }
 ] as const;
 
-const USDC_DECIMALS = 6;
+const USDC_DECIMALS = 6; // Contract stores balances in 6 decimals (USDC standard)
 
 export interface BucketBalance {
   name: string;
