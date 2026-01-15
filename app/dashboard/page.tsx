@@ -3,6 +3,7 @@
 import { Button } from "@/components/ui/button"
 import { BottomNav } from "@/components/bottom-nav"
 import { SimpleHeader } from "@/components/simple-header"
+import { DashboardHeader } from "@/components/dashboard-header"
 import { AuthGuard } from "@/components/auth-guard"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -19,13 +20,14 @@ import {
   Scan,
   Loader2,
   Play,
+  CheckCircle2Icon,
 } from "lucide-react"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts"
 import Link from "next/link"
 import { useState, useMemo, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { useAccount } from "wagmi"
-import { EnhancedDepositModal } from "@/components/modals/enhanced-deposit-modal"
+import { DepositModal } from "@/components/modals/deposit-modal"
 import { useTransactionHistory } from "@/hooks/use-transaction-history"
 import { useWrappedReports } from "@/hooks/use-wrapped-reports"
 import { useWalletTxSync } from "@/hooks/useWalletTxSync"
@@ -48,37 +50,6 @@ export default function Dashboard() {
   const { hasActivity } = useWrappedReports()
   const walletSync = useWalletTxSync({ autoStart: false })
   const [isRefreshing, setIsRefreshing] = useState(false)
-
-  // Handle payment callback from Paystack
-  useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search)
-    const paymentStatus = urlParams.get('payment')
-    
-    if (paymentStatus) {
-      // Clear the URL parameter
-      const newUrl = window.location.pathname
-      window.history.replaceState({}, '', newUrl)
-      
-      if (paymentStatus === 'success') {
-        // Trigger payment verification
-        const checkPayment = async () => {
-          try {
-            const { PaystackStorage } = await import('@/lib/paystack-storage')
-            const callback = PaystackStorage.consumeCallback()
-            
-            if (callback && callback.status === 'success') {
-              // Payment verification will be handled by the enhanced deposit hook
-              console.log('Payment callback detected, verification will be handled automatically')
-            }
-          } catch (error) {
-            console.error('Error checking payment callback:', error)
-          }
-        }
-        
-        checkPayment()
-      }
-    }
-  }, [])
 
   // Check if user should be redirected to wrapped page
   useEffect(() => {
@@ -192,7 +163,8 @@ export default function Dashboard() {
   return (
     <AuthGuard>
       <div className="min-h-screen gradient-bg pb-24">
-        <SimpleHeader />
+        <DashboardHeader />
+        {/* <SimpleHeader /> */}
 
         <main className="p-4 sm:p-6 lg:p-8">
           <div className="max-w-7xl mx-auto space-y-6">
@@ -306,10 +278,10 @@ export default function Dashboard() {
             </Card>
 
             {/* Summary Row */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex flex-col gap-4">
               <div className="space-y-1">
-                <h1 className="text-3xl font-bold text-foreground text-glow-neon">Dashboard</h1>
-                <p className="text-muted-foreground text-sm">
+                <h1 className="text-2xl sm:text-3xl font-bold text-foreground text-glow-neon">Dashboard</h1>
+                <p className="text-muted-foreground text-xs sm:text-sm">
                   {isLoading ? (
                     <span className="flex items-center gap-2">
                       <Loader2 className="w-3 h-3 animate-spin" />
@@ -326,31 +298,33 @@ export default function Dashboard() {
                       )}
                     </span>
                   ) : stats.transactionCount > 0 ? (
-                    <span>
-                      {walletSync.transactions.length} wallet transactions • {stats.transactionCount} contract transactions
-                      {fromCache && <span className="text-purple-400 ml-2">• Cached data</span>}
+                    <span className="flex flex-wrap items-center gap-1">
+                      <span>{walletSync.transactions.length} wallet transactions</span>
+                      <span className="hidden sm:inline">•</span>
+                      <span>{stats.transactionCount} contract transactions</span>
+                      {fromCache && <span className="text-purple-400">• Cached data</span>}
                     </span>
                   ) : (
                     'Track your DeFi budgets and earnings'
                   )}
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Button
                   variant="outline"
                   size="sm"
-                  className="glass-card border-green-500/30 text-green-400 hover:bg-green-500/10 gap-2 bg-transparent"
+                  className="glass-card border-green-500/30 text-green-400 hover:bg-green-500/10 gap-2 bg-transparent text-xs sm:text-sm h-8 sm:h-9"
                   asChild
                 >
                   <Link href="/faucet">
-                    <Droplet className="w-4 h-4" />
-                    Faucet
+                    <Droplet className="w-3 h-3 sm:w-4 sm:h-4" />
+                    <span className="hidden xs:inline">Faucet</span>
                   </Link>
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
-                  className="glass-card border-blue-500/30 text-blue-400 hover:bg-blue-500/10 gap-2 bg-transparent"
+                  className="glass-card border-blue-500/30 text-blue-400 hover:bg-blue-500/10 gap-2 bg-transparent text-xs sm:text-sm h-8 sm:h-9"
                   onClick={() => {
                     if (!walletSync.isSyncing) {
                       walletSync.startSync({ maxBlocks: 1000 })
@@ -364,46 +338,48 @@ export default function Dashboard() {
                 >
                   {!walletSync.isSyncing ? (
                     <>
-                      <Play className="w-4 h-4" />
-                      Start Sync
+                      <Play className="w-3 h-3 sm:w-4 sm:h-4" />
+                      <span className="hidden sm:inline">Start Sync</span>
+                      <span className="sm:hidden">Sync</span>
                     </>
                   ) : walletSync.isPaused ? (
                     <>
-                      <Play className="w-4 h-4" />
-                      Resume
+                      <Play className="w-3 h-3 sm:w-4 sm:h-4" />
+                      <span className="hidden sm:inline">Resume</span>
                     </>
                   ) : (
                     <>
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      Pause Sync
+                      <RefreshCw className="w-3 h-3 sm:w-4 sm:h-4 animate-spin" />
+                      <span className="hidden sm:inline">Pause Sync</span>
+                      <span className="sm:hidden">Pause</span>
                     </>
                   )}
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
-                  className="glass-card border-purple-500/30 text-purple-400 hover:bg-purple-500/10 gap-2 bg-transparent"
+                  className="glass-card border-purple-500/30 text-purple-400 hover:bg-purple-500/10 gap-2 bg-transparent text-xs sm:text-sm h-8 sm:h-9 hidden sm:flex"
                 >
-                  <Scan className="w-4 h-4" />
-                  Scan QR
+                  <Scan className="w-3 h-3 sm:w-4 sm:h-4" />
+                  <span>Scan QR</span>
                 </Button>
-                <Link href="/wrapped">
+                <Link href="/wrapped" className="hidden sm:block">
                   <Button
                     variant="outline"
                     size="sm"
-                    className="glass-card border-purple-500/30 text-purple-400 hover:bg-purple-500/10 gap-2 bg-transparent"
+                    className="glass-card border-purple-500/30 text-purple-400 hover:bg-purple-500/10 gap-2 bg-transparent text-xs sm:text-sm h-8 sm:h-9"
                   >
-                    <Activity className="w-4 h-4" />
-                    View Wrapped
+                    <Activity className="w-3 h-3 sm:w-4 sm:h-4" />
+                    <span>View Wrapped</span>
                   </Button>
                 </Link>
                 <Button
                   variant="outline"
                   size="sm"
-                  className="glass-card border-purple-500/30 text-purple-400 hover:bg-purple-500/10 gap-2 bg-transparent"
+                  className="glass-card border-purple-500/30 text-purple-400 hover:bg-purple-500/10 gap-2 bg-transparent text-xs sm:text-sm h-8 sm:h-9 hidden lg:flex"
                 >
-                  <Share2 className="w-4 h-4" />
-                  Share
+                  <Share2 className="w-3 h-3 sm:w-4 sm:h-4" />
+                  <span>Share</span>
                 </Button>
               </div>
             </div>
@@ -661,7 +637,7 @@ export default function Dashboard() {
         </div>
       </main>
 
-      <EnhancedDepositModal open={isDepositOpen} onOpenChange={setIsDepositOpen} bucketId="auto-split" />
+      <DepositModal open={isDepositOpen} onOpenChange={setIsDepositOpen} bucketId="auto-split" />
       
       <BottomNav />
     </div>

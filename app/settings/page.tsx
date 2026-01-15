@@ -27,6 +27,7 @@ import { useContracts } from "@/lib/contracts"
 import { useSettings, type BucketAllocation } from "@/hooks/use-settings"
 import { useToast } from "@/hooks/use-toast"
 import { OCRSettings } from "@/components/ocr-settings"
+import { DashboardHeader } from "@/components/dashboard-header"
 
 export default function SettingsPage() {
   const { bucketVaultAddress, payrollEngineAddress } = useContracts()
@@ -116,7 +117,8 @@ export default function SettingsPage() {
   return (
     <AuthGuard>
       <div className="min-h-screen gradient-bg pb-24">
-        <SimpleHeader />
+        {/* <SimpleHeader /> */}
+        <DashboardHeader />
 
       <main className="p-4 sm:p-6 lg:p-8">
         <div className="max-w-3xl mx-auto space-y-6">

@@ -124,9 +124,14 @@ describe('Paystack Deposit Integrity Properties', () => {
           
           // For NGN, crypto amount should be fiat amount divided by exchange rate
           if (currency === 'NGN') {
-            const expectedCryptoAmount = fiatAmount / 1500 // Mock rate
-            expect(expectedCryptoAmount).toBeGreaterThan(0)
-            expect(expectedCryptoAmount).toBeLessThan(fiatAmount) // NGN should be worth less than USD
+            // Use realistic exchange rate range (₦1,400-1,500 per USD)
+            const minRate = 1400
+            const maxRate = 1500
+            const expectedMinCrypto = fiatAmount / maxRate
+            const expectedMaxCrypto = fiatAmount / minRate
+            
+            expect(expectedMinCrypto).toBeGreaterThan(0)
+            expect(expectedMaxCrypto).toBeLessThan(fiatAmount) // NGN should be worth less than USD
           }
 
           // Always return true for property test

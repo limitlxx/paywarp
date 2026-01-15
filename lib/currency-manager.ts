@@ -26,7 +26,7 @@ const PRICE_FEED_ADDRESSES = {
 // Fallback rates (updated periodically)
 const FALLBACK_RATES: CurrencyRates = {
   MNT_USD: 1.06, // Current MNT price in USD (source: CoinMarketCap/CoinGecko live data)
-  USD_NGN: 1438, // Mid-market USD to NGN rate (highly volatile; black/parallel market often ~1490–1500+)
+  USD_NGN: 1438, // Mid-market USD to NGN rate (official CBN rate; parallel market ~1490–1500+)
   lastUpdated: new Date(),
   source: 'fallback'
 }

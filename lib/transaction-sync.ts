@@ -179,10 +179,10 @@ export class TransactionSyncService {
     }
 
     // If no cache or forced sync, fetch fresh data (only if maxBlocks > 0)
-    if (options.maxBlocks === 0) {
-      console.log('Sync disabled (maxBlocks=0), returning empty transactions')
-      return { transactions: [], fromCache: false }
-    }
+    // if (options.maxBlocks === 0) {
+    //   console.log('Sync disabled (maxBlocks=0), returning empty transactions')
+    //   return { transactions: [], fromCache: false }
+    // }
 
     console.log('Fetching fresh transaction data...')
     

@@ -194,8 +194,26 @@ export class DepositService {
 
       // Calculate crypto amount from payment data
       const paymentData = verification.data
-      const cryptoAmount = paymentData.metadata?.cryptoAmount || 
-        (paymentData.currency === 'USD' ? paymentData.amount / 100 : (paymentData.amount / 100) / 1500)
+      let cryptoAmount = paymentData.metadata?.cryptoAmount
+      
+      // If crypto amount not in metadata, calculate from fiat amount
+      if (!cryptoAmount) {
+        const fiatAmount = paymentData.amount / 100
+        if (paymentData.currency === 'USD') {
+          cryptoAmount = fiatAmount
+        } else {
+          // Fetch real-time NGN rate
+          try {
+            const { getCurrencyManager } = await import('./currency-manager')
+            const currencyManager = getCurrencyManager()
+            const rates = await currencyManager.getCurrentRates()
+            cryptoAmount = fiatAmount / rates.USD_NGN
+          } catch (error) {
+            console.error('Failed to fetch exchange rate, using fallback:', error)
+            cryptoAmount = fiatAmount / 1438 // Fallback rate
+          }
+        }
+      }
 
       // Fund user wallet with USDC
       const fundingResult = await paystackService.fundUserWallet(userAddress, cryptoAmount, paystackReference)
@@ -213,6 +231,20 @@ export class DepositService {
         console.warn('Auto-split failed, but USDC was transferred to user:', splitResult.error)
       }
 
+      // Get real exchange rate for record
+      let exchangeRate = 1
+      if (paymentData.currency !== 'USD') {
+        try {
+          const { getCurrencyManager } = await import('./currency-manager')
+          const currencyManager = getCurrencyManager()
+          const rates = await currencyManager.getCurrentRates()
+          exchangeRate = rates.USD_NGN
+        } catch (error) {
+          console.error('Failed to fetch exchange rate for record:', error)
+          exchangeRate = 1438 // Fallback rate
+        }
+      }
+
       // Create deposit record
       const depositRecord: DepositRecord = {
         id: `deposit_${paystackReference}`,
@@ -222,7 +254,7 @@ export class DepositService {
         fiatCurrency: paymentData.currency as 'NGN' | 'USD',
         cryptoAmount,
         cryptoToken: 'USDC',
-        exchangeRate: paymentData.currency === 'USD' ? 1 : 1500,
+        exchangeRate,
         status: 'success',
         timestamp: new Date(),
         userAddress,

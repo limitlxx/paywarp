@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import {
   Dialog,
   DialogContent,
@@ -15,12 +15,10 @@ import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Wallet, CreditCard, Droplet, ArrowRight, CheckCircle2, Loader2, Info, TrendingUp } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
-import { useBlockchainBuckets } from "@/hooks/use-blockchain-buckets-improved"
-import { useBuckets } from "@/hooks/use-buckets"
 import { useWallet } from "@/hooks/use-wallet"
 import { useToast } from "@/hooks/use-toast"
 import { useEnhancedDeposit } from "@/hooks/use-enhanced-deposit"
-import { PaystackDeposit } from "@/components/paystack-deposit"
+import { useTransactionHistory } from "@/hooks/use-transaction-history"
 import type { BucketType } from "@/lib/types"
 
 interface DepositModalProps {
@@ -34,46 +32,65 @@ export function DepositModal({ open, onOpenChange, bucketId = "auto-split", buck
   const [step, setStep] = useState<"amount" | "method" | "paystack" | "processing" | "success">("amount")
   const [amount, setAmount] = useState("")
   const [method, setMethod] = useState<"paystack" | "wallet" | "faucet">("paystack")
+  const [email, setEmail] = useState("")
   const [enableRWAConversion, setEnableRWAConversion] = useState(true)
   const [rwaTokenType, setRwaTokenType] = useState<"USDY" | "mUSD">("USDY")
-  const [email, setEmail] = useState("")
-  const { depositAndSplit, isLoading: blockchainLoading, error: blockchainError } = useBlockchainBuckets()
-  const { convertToRWA } = useBuckets()
+  const [exchangeRate, setExchangeRate] = useState(1438) // Default NGN rate
+  
   const { isConnected, connect } = useWallet()
   const { toast } = useToast()
+  const { syncHistory } = useTransactionHistory()
   const {
     depositFromWallet,
     depositFromPaystack,
     depositFromFaucet,
     currentPaystackSession,
     verifyPaystackPayment,
-    isLoading: depositLoading,
-    error: depositError,
+    isLoading,
     usdcBalance,
     needsSplitConfig,
     clearError
   } = useEnhancedDeposit()
 
-  const isLoading = blockchainLoading || depositLoading
-  const error = blockchainError || depositError
-
   const isSpendable = bucketId === "spendable"
   const isAutoSplit = bucketId === "auto-split"
   const isYieldingBucket = bucketId === "savings" || bucketId === "growth" || bucketId === "billings"
 
+  // Fetch real-time exchange rate on mount
+  useEffect(() => {
+    const fetchRate = async () => {
+      try {
+        const { getCurrencyManager } = await import('@/lib/currency-manager')
+        const currencyManager = getCurrencyManager()
+        const rates = await currencyManager.getCurrentRates()
+        setExchangeRate(rates.USD_NGN)
+      } catch (error) {
+        console.error('Failed to fetch exchange rate:', error)
+        // Keep default fallback rate
+      }
+    }
+    fetchRate()
+  }, [])
+
   const handleNext = async () => {
+    console.log('🎯 handleNext called, current step:', step)
+    
     if (step === "amount") {
       setStep("method")
     } else if (step === "method") {
+      console.log('📝 Method step, selected method:', method)
+      
       if (method === "paystack") {
         setStep("paystack")
         return
       }
       
       if (method === "wallet" && !isConnected) {
+        console.log('🔌 Wallet not connected, attempting to connect...')
         try {
           await connect()
         } catch (err) {
+          console.error('❌ Connection failed:', err)
           toast({
             title: "Connection Failed",
             description: "Please connect your wallet to continue.",
@@ -89,22 +106,49 @@ export function DepositModal({ open, onOpenChange, bucketId = "auto-split", buck
         const numAmount = Number(amount)
         let result
         
+        console.log('🔄 Starting deposit process...', { method, amount: numAmount, bucketId })
+        
         if (method === "wallet") {
+          console.log('💰 Wallet deposit selected')
+          
+          // Convert NGN to USDC for wallet deposits and round to 6 decimals (USDC precision)
+          const usdcAmount = Math.floor((numAmount / exchangeRate) * 1e6) / 1e6
+          console.log('💱 Converting NGN to USDC:', { ngn: numAmount, usdc: usdcAmount, rate: exchangeRate })
+          
           if (isAutoSplit) {
-            result = await depositFromWallet(numAmount)
+            console.log('🔀 Auto-split mode')
+            result = await depositFromWallet(usdcAmount)
           } else {
-            result = await depositFromWallet(numAmount, bucketId as string)
+            console.log('🎯 Direct bucket deposit:', bucketId)
+            result = await depositFromWallet(usdcAmount, bucketId as string)
           }
+          console.log('📊 Deposit result:', result)
         } else if (method === "faucet") {
-          result = await depositFromFaucet(numAmount)
+          // Convert NGN to USDC for faucet using real-time rate
+          const usdcAmount = numAmount / exchangeRate
+          result = await depositFromFaucet(usdcAmount)
         }
         
         if (result?.success) {
           setStep("success")
+          
+          // Trigger transaction sync after successful deposit
+          console.log('🔄 Triggering transaction sync after successful deposit')
+          setTimeout(async () => {
+            try {
+              await syncHistory({ forceSync: true, maxBlocks: 100 })
+              console.log('✅ Transaction sync completed after deposit')
+            } catch (syncError) {
+              console.warn('⚠️ Transaction sync failed after deposit:', syncError)
+              // Don't show error to user - sync failure shouldn't affect deposit success
+            }
+          }, 2000) // Wait 2 seconds for transaction to be mined
         } else {
+          console.error('❌ Deposit failed:', result?.error)
           throw new Error(result?.error || 'Deposit failed')
         }
       } catch (err) {
+        console.error('❌ Deposit error caught:', err)
         const errorMessage = err instanceof Error ? err.message : 'Deposit failed'
         toast({
           title: "Deposit Failed",
@@ -120,12 +164,29 @@ export function DepositModal({ open, onOpenChange, bucketId = "auto-split", buck
     setStep("amount")
     setAmount("")
     setEmail("")
+    setMethod("paystack")
+    setEnableRWAConversion(true)
+    setRwaTokenType("USDY")
     clearError()
-    onOpenChange(false)
+  }
+
+  const handleClose = (open: boolean) => {
+    if (!open) {
+      // Reset modal state when closing
+      reset()
+    }
+    onOpenChange(open)
+  }
+
+  const resetForNewDeposit = () => {
+    setStep("amount")
+    setAmount("")
+    // Keep email and method for convenience
+    clearError()
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="glass border-purple-500/20 sm:max-w-md bg-black/90 backdrop-blur-2xl">
         <DialogHeader>
           <DialogTitle className="text-2xl font-bold flex items-center gap-2">
@@ -151,11 +212,11 @@ export function DepositModal({ open, onOpenChange, bucketId = "auto-split", buck
             >
               <div className="space-y-2">
                 <Label htmlFor="deposit-amount" className="text-purple-300">
-                  Amount (USD)
+                  Amount (NGN)
                 </Label>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-2xl font-bold text-muted-foreground">
-                    $
+                    ₦
                   </span>
                   <Input
                     id="deposit-amount"
@@ -166,33 +227,35 @@ export function DepositModal({ open, onOpenChange, bucketId = "auto-split", buck
                     className="pl-8 text-3xl h-16 glass border-purple-500/30 focus:border-purple-500 font-bold bg-transparent"
                   />
                 </div>
+                
+                {/* Exchange Rate Info */}
+                {amount && (
+                  <div className="p-2 rounded-lg bg-blue-500/5 border border-blue-500/10">
+                    <p className="text-xs text-muted-foreground text-center">
+                      ₦{Number(amount).toLocaleString()} ≈ {(Number(amount) / exchangeRate).toFixed(2)} USDC (Rate: ₦{exchangeRate.toLocaleString()} = 1 USDC)
+                    </p>
+                  </div>
+                )}
               </div>
-              
-              {/* Email field for Paystack */}
-              {method === "paystack" && (
-                <div className="space-y-2">
-                  <Label htmlFor="email" className="text-purple-300">
-                    Email Address
-                  </Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="your@email.com"
-                    className="glass border-purple-500/30 focus:border-purple-500 bg-transparent"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Required for Paystack payment processing
-                  </p>
-                </div>
-              )}
               
               {/* USDC Balance Display */}
               {isConnected && (
                 <div className="p-3 rounded-xl bg-blue-500/5 border border-blue-500/10 flex justify-between items-center">
                   <span className="text-sm text-muted-foreground">Your USDC Balance:</span>
                   <span className="text-sm font-bold text-foreground">{usdcBalance.toFixed(2)} USDC</span>
+                </div>
+              )}
+              
+              {/* Insufficient balance warning for wallet method */}
+              {isConnected && amount && (Number(amount) / exchangeRate) > usdcBalance && (
+                <div className="p-3 rounded-xl bg-red-500/5 border border-red-500/10 flex gap-3">
+                  <Info className="w-5 h-5 text-red-400 shrink-0" />
+                  <div className="flex-1">
+                    <p className="text-xs text-red-400 font-medium mb-1">Insufficient USDC Balance</p>
+                    <p className="text-xs text-muted-foreground leading-relaxed">
+                      You have {usdcBalance.toFixed(2)} USDC but need {(Number(amount) / exchangeRate).toFixed(2)} USDC for this deposit. Please reduce the amount or use Paystack payment.
+                    </p>
+                  </div>
                 </div>
               )}
               
@@ -206,7 +269,7 @@ export function DepositModal({ open, onOpenChange, bucketId = "auto-split", buck
                 </div>
               )}
               
-              {isAutoSplit && (
+              {isAutoSplit && !needsSplitConfig && (
                 <div className="p-3 rounded-xl bg-purple-500/5 border border-purple-500/10 flex gap-3">
                   <Info className="w-5 h-5 text-purple-400 shrink-0" />
                   <p className="text-xs text-muted-foreground leading-relaxed">
@@ -300,30 +363,62 @@ export function DepositModal({ open, onOpenChange, bucketId = "auto-split", buck
                     <div className="text-left">
                       <p className="font-bold text-foreground">Crypto Wallet</p>
                       <p className="text-xs text-muted-foreground">
-                        {isConnected ? "Connected" : "Connect via MetaMask/WalletConnect"}
+                        {isConnected ? `Balance: ${usdcBalance.toFixed(2)} USDC` : "Connect via MetaMask/WalletConnect"}
                       </p>
                     </div>
                   </div>
                   {method === "wallet" && <CheckCircle2 className="w-5 h-5 text-purple-400" />}
                 </button>
               )}
-
-              {isSpendable && (
-                <button
-                  onClick={() => setMethod("faucet")}
-                  className={`w-full p-4 rounded-xl border flex items-center justify-between transition-all ${method === "faucet" ? "border-purple-500 bg-purple-500/10 ring-1 ring-purple-500" : "border-white/10 glass hover:bg-white/5"}`}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 rounded-lg bg-indigo-500/20">
-                      <Droplet className="w-5 h-5 text-indigo-400" />
-                    </div>
-                    <div className="text-left">
-                      <p className="font-bold text-foreground">Mantle Faucet</p>
-                      <p className="text-xs text-muted-foreground">Claim testnet MNT/USDC</p>
-                    </div>
+              
+              {/* Show insufficient balance warning in method step */}
+              {method === "wallet" && isConnected && amount && (Number(amount) / exchangeRate) > usdcBalance && (
+                <div className="p-3 rounded-xl bg-red-500/5 border border-red-500/10 flex gap-3">
+                  <Info className="w-5 h-5 text-red-400 shrink-0" />
+                  <div className="flex-1">
+                    <p className="text-xs text-red-400 font-medium mb-1">Insufficient Balance</p>
+                    <p className="text-xs text-muted-foreground">
+                      Need {(Number(amount) / exchangeRate).toFixed(2)} USDC, but you only have {usdcBalance.toFixed(2)} USDC. Choose Paystack or reduce amount.
+                    </p>
                   </div>
-                  {method === "faucet" && <CheckCircle2 className="w-5 h-5 text-purple-400" />}
-                </button>
+                </div>
+              )}
+
+              {/* <button
+                onClick={() => setMethod("faucet")}
+                className={`w-full p-4 rounded-xl border flex items-center justify-between transition-all ${method === "faucet" ? "border-purple-500 bg-purple-500/10 ring-1 ring-purple-500" : "border-white/10 glass hover:bg-white/5"}`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-lg bg-indigo-500/20">
+                    <Droplet className="w-5 h-5 text-indigo-400" />
+                  </div>
+                  <div className="text-left">
+                    <p className="font-bold text-foreground">USDC Faucet</p>
+                    <p className="text-xs text-muted-foreground">Get testnet USDC for testing</p>
+                  </div>
+                </div>
+                {method === "faucet" && <CheckCircle2 className="w-5 h-5 text-purple-400" />}
+              </button> */}
+              
+              {/* Email field for Paystack */}
+              {method === "paystack" && (
+                <div className="space-y-2 mt-4">
+                  <Label htmlFor="email" className="text-purple-300">
+                    Email Address *
+                  </Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="your@email.com"
+                    className="glass border-purple-500/30 focus:border-purple-500 bg-transparent"
+                    required
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Required for Paystack payment processing and receipt delivery
+                  </p>
+                </div>
               )}
             </motion.div>
           )}
@@ -335,23 +430,106 @@ export function DepositModal({ open, onOpenChange, bucketId = "auto-split", buck
               exit={{ opacity: 0, x: -20 }}
               className="py-4"
             >
-              <PaystackDeposit
-                onSuccess={(depositAmount) => {
-                  toast({
-                    title: "Deposit Successful",
-                    description: `Successfully deposited $${depositAmount.toLocaleString()} via Paystack.`,
-                  })
-                  setStep("success")
-                }}
-                onError={(error) => {
-                  toast({
-                    title: "Deposit Failed",
-                    description: error,
-                    variant: "destructive",
-                  })
-                  setStep("method")
-                }}
-              />
+              <div className="space-y-4">
+                <div className="p-4 rounded-xl bg-green-500/5 border border-green-500/10">
+                  <h3 className="font-bold text-green-400 mb-2">Paystack Payment</h3>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    You'll be redirected to Paystack to complete your payment of ₦{Number(amount).toLocaleString()}.
+                    After successful payment, approximately {(Number(amount) / exchangeRate).toFixed(2)} USDC will be deposited to your wallet.
+                  </p>
+                  
+                  {currentPaystackSession ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                        <div>
+                          <p className="font-medium">Payment Session</p>
+                          <p className="text-sm text-muted-foreground">
+                            NGN {Number(amount).toLocaleString()}
+                          </p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-xs text-muted-foreground">Status</p>
+                          <p className="font-bold text-foreground capitalize">{currentPaystackSession.status}</p>
+                        </div>
+                      </div>
+                      
+                      {currentPaystackSession.status === 'pending' && (
+                        <div className="space-y-2">
+                          <Button
+                            onClick={() => {
+                              // Open Paystack URL in same tab for better UX
+                              console.log("Opening Paystack URL:", currentPaystackSession.paystackUrl);
+                              window.location.href = currentPaystackSession.paystackUrl
+                            }}
+                            className="w-full gradient-primary text-white"
+                          >
+                            <CreditCard className="w-4 h-4 mr-2" />
+                            Pay with Paystack
+                          </Button>
+                          
+                          <Button
+                            onClick={() => verifyPaystackPayment(currentPaystackSession.reference)}
+                            disabled={isLoading}
+                            variant="outline"
+                            className="w-full"
+                          >
+                            {isLoading ? (
+                              <>
+                                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                                Verifying with Paystack API...
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle2 className="w-4 h-4 mr-2" />
+                                I've Completed Payment
+                              </>
+                            )}
+                          </Button>
+                          
+                          <p className="text-xs text-muted-foreground text-center">
+                            Click "I've Completed Payment" after paying. We'll verify directly with Paystack.
+                          </p>
+                        </div>
+                      )}
+                      
+                      {currentPaystackSession.status === 'success' && (
+                        <div className="p-3 rounded-xl bg-green-500/10 border border-green-500/20 text-green-400 text-center">
+                          <CheckCircle2 className="w-5 h-5 mx-auto mb-2" />
+                          <p className="font-bold">Payment Verified!</p>
+                          <p className="text-sm text-muted-foreground">USDC is being deposited to your wallet</p>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <Button
+                      onClick={async () => {
+                        const result = await depositFromPaystack(Number(amount), "NGN", email)
+                        if (!result.success) {
+                          toast({
+                            title: "Payment Failed",
+                            description: result.error || "Failed to initialize payment",
+                            variant: "destructive"
+                          })
+                        }
+                      }}
+                      disabled={!email || isLoading}
+                      className="w-full gradient-primary text-white"
+                    >
+                      {isLoading ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Initializing...
+                        </>
+                      ) : (
+                        <>
+                          <CreditCard className="w-4 h-4 mr-2" />
+                          Initialize Payment
+                        </>
+                      )}
+                    </Button>
+                  )}
+                </div>
+              </div>
             </motion.div>
           )}
 
@@ -387,33 +565,59 @@ export function DepositModal({ open, onOpenChange, bucketId = "auto-split", buck
               <div className="text-center">
                 <p className="text-2xl font-bold text-foreground">Deposit Confirmed!</p>
                 <p className="text-sm text-muted-foreground mt-2 max-w-[240px] mx-auto">
-                  ${Number(amount).toLocaleString()} has been added to your {isAutoSplit ? "buckets" : bucketName}.
+                  ₦{Number(amount).toLocaleString()} paid → {(Number(amount) / exchangeRate).toFixed(2)} USDC added to your {isAutoSplit ? "buckets" : bucketName}.
                 </p>
               </div>
-              <Button onClick={reset} className="w-full gradient-primary text-white h-12 font-bold">
-                Back to Dashboard
-              </Button>
+              <div className="flex gap-2 w-full">
+                <Button onClick={resetForNewDeposit} variant="outline" className="flex-1 h-12 font-bold">
+                  Make Another Deposit
+                </Button>
+                <Button onClick={() => { reset(); onOpenChange(false); }} className="flex-1 gradient-primary text-white h-12 font-bold">
+                  Back to Dashboard
+                </Button>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
 
         {(step === "amount" || step === "method") && (
-          <DialogFooter>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
+            {step === "method" && (
+              <Button
+                onClick={() => setStep("amount")}
+                variant="outline"
+                className="w-full sm:w-auto"
+              >
+                Back
+              </Button>
+            )}
             <Button
-              disabled={!amount || (step === "amount" && Number(amount) <= 0) || isLoading}
+              disabled={
+                !amount || 
+                (step === "amount" && Number(amount) <= 0) ||
+                (step === "method" && method === "wallet" && isConnected && (Number(amount) / exchangeRate) > usdcBalance) ||
+                (step === "method" && method === "paystack" && (!email || !email.includes('@'))) ||
+                isLoading
+              }
               onClick={handleNext}
               className="w-full gradient-primary text-white h-12 text-lg font-bold group"
             >
-              {step === "amount" ? "Select Method" : `Deposit $${amount}`}
+              {step === "amount" ? "Select Method" : `Deposit  ₦${amount}`}
               <ArrowRight className="w-5 h-5 ml-2 group-hover:translate-x-1 transition-transform" />
             </Button>
           </DialogFooter>
         )}
 
         {step === "paystack" && (
-          <DialogFooter>
+          <DialogFooter className="flex-col sm:flex-row gap-2">
             <Button
-              onClick={() => setStep("method")}
+              onClick={() => {
+                setStep("method")
+                // Clear any existing session if going back
+                if (currentPaystackSession?.status === 'pending') {
+                  clearError()
+                }
+              }}
               variant="outline"
               className="w-full"
             >
@@ -425,3 +629,6 @@ export function DepositModal({ open, onOpenChange, bucketId = "auto-split", buck
     </Dialog>
   )
 }
+
+// Export as EnhancedDepositModal for backward compatibility
+export { DepositModal as EnhancedDepositModal }

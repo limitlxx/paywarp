@@ -10,6 +10,7 @@ import { motion } from "framer-motion"
 import { History, ArrowDownLeft, TrendingUp, Droplet, Zap, ExternalLink, Filter, Search } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Suspense } from "react" // added Suspense import
+import { DashboardHeader } from "@/components/dashboard-header"
 
 const historyItems = [
   {
@@ -183,7 +184,8 @@ export default function WarpHistory() {
   return (
     <AuthGuard>
       <div className="min-h-screen gradient-bg pb-24">
-        <SimpleHeader />
+        {/* <SimpleHeader /> */}
+        <DashboardHeader />
 
         <main className="p-4 sm:p-6 lg:p-8">
           <Suspense fallback={<div>Loading...</div>}>

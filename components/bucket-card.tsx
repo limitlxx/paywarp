@@ -57,7 +57,7 @@ export function BucketCard({
 }: BucketCardProps) {
   const [showDepositModal, setShowDepositModal] = useState(false)
   const [showTransferModal, setShowTransferModal] = useState(false)
-  const cardRef = useRef<HTMLDivElement>(null)
+  const cardRef = useRef<HTMLElement>(null)
   
   // Mobile and performance optimizations
   const capabilities = useMobileCapabilities()
