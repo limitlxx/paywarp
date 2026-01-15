@@ -1,19 +1,26 @@
 "use client"
 
 import { useState } from "react"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+} from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Card, CardContent } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { CalendarIcon, Target, Loader2, DollarSign, Clock, FileText } from "lucide-react"
+import { Target, Calendar as CalendarIcon, CheckCircle2, Loader2, AlertCircle } from "lucide-react"
+import { motion, AnimatePresence } from "framer-motion"
 import { format } from "date-fns"
 import { cn } from "@/lib/utils"
 import { useSavingsGoals } from "@/hooks/use-savings-goals"
+import { useToast } from "@/hooks/use-toast"
 
 interface SavingsGoalModalProps {
   open: boolean
@@ -21,293 +28,258 @@ interface SavingsGoalModalProps {
 }
 
 export function SavingsGoalModal({ open, onOpenChange }: SavingsGoalModalProps) {
-  const { createSavingsGoal, isLoading } = useSavingsGoals()
-  
+  const [step, setStep] = useState<"form" | "processing" | "success">("form")
   const [formData, setFormData] = useState({
     name: "",
     targetAmount: "",
     targetDate: undefined as Date | undefined,
     description: "",
   })
+  const [isCalendarOpen, setIsCalendarOpen] = useState(false)
   
-  const [errors, setErrors] = useState<Record<string, string>>({})
+  const { createSavingsGoal, isLoading } = useSavingsGoals()
+  const { toast } = useToast()
 
-  const validateForm = () => {
-    const newErrors: Record<string, string> = {}
-    
+  const handleSubmit = async () => {
+    // Validation
     if (!formData.name.trim()) {
-      newErrors.name = "Goal name is required"
-    }
-    
-    if (!formData.targetAmount || parseFloat(formData.targetAmount) <= 0) {
-      newErrors.targetAmount = "Target amount must be greater than 0"
-    }
-    
-    if (!formData.targetDate) {
-      newErrors.targetDate = "Target date is required"
-    } else if (formData.targetDate <= new Date()) {
-      newErrors.targetDate = "Target date must be in the future"
-    }
-    
-    if (!formData.description.trim()) {
-      newErrors.description = "Description is required"
-    }
-    
-    setErrors(newErrors)
-    return Object.keys(newErrors).length === 0
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    
-    if (!validateForm()) {
+      toast({
+        title: "Validation Error",
+        description: "Please enter a goal name.",
+        variant: "destructive",
+      })
       return
     }
+
+    if (!formData.targetAmount || Number(formData.targetAmount) <= 0) {
+      toast({
+        title: "Validation Error",
+        description: "Please enter a valid target amount.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (!formData.targetDate) {
+      toast({
+        title: "Validation Error",
+        description: "Please select a target date.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (formData.targetDate <= new Date()) {
+      toast({
+        title: "Validation Error",
+        description: "Target date must be in the future.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setStep("processing")
     
     try {
       await createSavingsGoal(
-        parseFloat(formData.targetAmount),
-        formData.targetDate!,
-        formData.description
+        Number(formData.targetAmount),
+        formData.targetDate,
+        formData.description || formData.name
       )
       
-      // Reset form and close modal
-      setFormData({
-        name: "",
-        targetAmount: "",
-        targetDate: undefined,
-        description: "",
-      })
-      setErrors({})
-      onOpenChange(false)
-    } catch (error) {
-      console.error('Failed to create savings goal:', error)
+      setStep("success")
+    } catch (err) {
+      console.error('Failed to create savings goal:', err)
+      setStep("form") // Go back to form on error
     }
   }
 
-  const handleInputChange = (field: string, value: string | Date | undefined) => {
-    setFormData(prev => ({ ...prev, [field]: value }))
-    
-    // Clear error when user starts typing
-    if (errors[field]) {
-      setErrors(prev => ({ ...prev, [field]: "" }))
+  const reset = () => {
+    setStep("form")
+    setFormData({
+      name: "",
+      targetAmount: "",
+      targetDate: undefined,
+      description: "",
+    })
+    onOpenChange(false)
+  }
+
+  const handleClose = (open: boolean) => {
+    if (!open && step !== "processing") {
+      reset()
     }
+    onOpenChange(open)
   }
 
-  const calculateMonthsToTarget = () => {
-    if (!formData.targetDate) return null
-    
-    const now = new Date()
-    const target = formData.targetDate
-    const diffTime = target.getTime() - now.getTime()
-    const diffMonths = Math.ceil(diffTime / (1000 * 60 * 60 * 24 * 30))
-    
-    return diffMonths
-  }
-
-  const calculateMonthlySavings = () => {
-    const months = calculateMonthsToTarget()
-    const amount = parseFloat(formData.targetAmount)
-    
-    if (!months || !amount || months <= 0) return null
-    
-    return amount / months
-  }
+  const isFormValid = formData.name.trim() && 
+                     formData.targetAmount && 
+                     Number(formData.targetAmount) > 0 && 
+                     formData.targetDate &&
+                     formData.targetDate > new Date()
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="glass-card border-purple-500/20 max-w-2xl">
+    <Dialog open={open} onOpenChange={handleClose}>
+      <DialogContent className="glass border-purple-500/20 sm:max-w-md bg-black/90 backdrop-blur-2xl">
         <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-xl">
-            <Target className="w-6 h-6 text-purple-400" />
+          <DialogTitle className="text-2xl font-bold flex items-center gap-2">
+            <div className="p-2 rounded-xl bg-purple-500/20">
+              <Target className="w-5 h-5 text-purple-400" />
+            </div>
             Create Savings Goal
           </DialogTitle>
-          <DialogDescription>
-            Set up a new savings goal with fund locking and progress tracking. 
-            Funds will be locked until the goal is completed and earn bonus APY upon completion.
+          <DialogDescription className="text-muted-foreground">
+            Set a target amount and date to start building towards your financial goals.
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Goal Name */}
-            <div className="space-y-2">
-              <Label htmlFor="name" className="flex items-center gap-2">
-                <FileText className="w-4 h-4 text-purple-400" />
-                Goal Name
-              </Label>
-              <Input
-                id="name"
-                placeholder="e.g., Emergency Fund, Vacation, New Car"
-                value={formData.name}
-                onChange={(e) => handleInputChange("name", e.target.value)}
-                className={cn(
-                  "glass border-white/10 bg-transparent",
-                  errors.name && "border-red-500"
-                )}
-                disabled={isLoading}
-              />
-              {errors.name && (
-                <p className="text-sm text-red-400">{errors.name}</p>
-              )}
-            </div>
-
-            {/* Target Amount */}
-            <div className="space-y-2">
-              <Label htmlFor="targetAmount" className="flex items-center gap-2">
-                <DollarSign className="w-4 h-4 text-green-400" />
-                Target Amount
-              </Label>
-              <div className="relative">
+        <AnimatePresence mode="wait">
+          {step === "form" && (
+            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="goal-name" className="text-purple-300 font-bold">
+                  Goal Name
+                </Label>
                 <Input
-                  id="targetAmount"
-                  type="number"
-                  placeholder="0.00"
-                  step="0.01"
-                  min="0"
-                  value={formData.targetAmount}
-                  onChange={(e) => handleInputChange("targetAmount", e.target.value)}
-                  className={cn(
-                    "glass border-white/10 bg-transparent pl-8",
-                    errors.targetAmount && "border-red-500"
-                  )}
-                  disabled={isLoading}
+                  id="goal-name"
+                  value={formData.name}
+                  onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+                  placeholder="e.g., Emergency Fund, Vacation, New Car"
+                  className="glass border-purple-500/30 focus:border-purple-500 bg-transparent"
                 />
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
-                  $
-                </span>
               </div>
-              {errors.targetAmount && (
-                <p className="text-sm text-red-400">{errors.targetAmount}</p>
-              )}
-            </div>
-          </div>
 
-          {/* Target Date */}
-          <div className="space-y-2">
-            <Label className="flex items-center gap-2">
-              <Clock className="w-4 h-4 text-blue-400" />
-              Target Date
-            </Label>
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className={cn(
-                    "w-full justify-start text-left font-normal glass border-white/10 bg-transparent",
-                    !formData.targetDate && "text-muted-foreground",
-                    errors.targetDate && "border-red-500"
-                  )}
-                  disabled={isLoading}
-                >
-                  <CalendarIcon className="mr-2 h-4 w-4" />
-                  {formData.targetDate ? format(formData.targetDate, "PPP") : "Pick a date"}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-0 glass border-purple-500/20" align="start">
-                <Calendar
-                  mode="single"
-                  selected={formData.targetDate}
-                  onSelect={(date) => handleInputChange("targetDate", date)}
-                  disabled={(date) => date <= new Date()}
-                  initialFocus
+              <div className="space-y-2">
+                <Label htmlFor="target-amount" className="text-purple-300 font-bold">
+                  Target Amount (USDC)
+                </Label>
+                <div className="relative">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xl font-bold text-muted-foreground">
+                    $
+                  </span>
+                  <Input
+                    id="target-amount"
+                    type="number"
+                    value={formData.targetAmount}
+                    onChange={(e) => setFormData(prev => ({ ...prev, targetAmount: e.target.value }))}
+                    placeholder="0.00"
+                    step="0.01"
+                    min="0"
+                    className="pl-8 text-2xl h-14 glass border-purple-500/30 focus:border-purple-500 font-bold bg-transparent"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-purple-300 font-bold">Target Date</Label>
+                <Popover open={isCalendarOpen} onOpenChange={setIsCalendarOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      variant="outline"
+                      className={cn(
+                        "w-full justify-start text-left font-normal glass border-purple-500/30 bg-transparent",
+                        !formData.targetDate && "text-muted-foreground"
+                      )}
+                    >
+                      <CalendarIcon className="mr-2 h-4 w-4" />
+                      {formData.targetDate ? format(formData.targetDate, "PPP") : "Pick a date"}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-auto p-0 glass border-purple-500/20" align="start">
+                    <Calendar
+                      mode="single"
+                      selected={formData.targetDate}
+                      onSelect={(date) => {
+                        setFormData(prev => ({ ...prev, targetDate: date }))
+                        setIsCalendarOpen(false)
+                      }}
+                      disabled={(date) => date <= new Date()}
+                      initialFocus
+                    />
+                  </PopoverContent>
+                </Popover>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="description" className="text-purple-300 font-bold">
+                  Description (Optional)
+                </Label>
+                <Textarea
+                  id="description"
+                  value={formData.description}
+                  onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+                  placeholder="What is this goal for? Any additional details..."
+                  className="glass border-purple-500/30 focus:border-purple-500 bg-transparent resize-none"
+                  rows={3}
                 />
-              </PopoverContent>
-            </Popover>
-            {errors.targetDate && (
-              <p className="text-sm text-red-400">{errors.targetDate}</p>
-            )}
-          </div>
+              </div>
 
-          {/* Description */}
-          <div className="space-y-2">
-            <Label htmlFor="description">Description</Label>
-            <Textarea
-              id="description"
-              placeholder="Describe your savings goal and what you plan to achieve..."
-              value={formData.description}
-              onChange={(e) => handleInputChange("description", e.target.value)}
-              className={cn(
-                "glass border-white/10 bg-transparent min-h-[100px]",
-                errors.description && "border-red-500"
+              {formData.targetAmount && formData.targetDate && (
+                <div className="p-4 rounded-xl bg-purple-500/10 border border-purple-500/20 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <Target className="w-4 h-4 text-purple-400" />
+                    <span className="text-sm font-medium text-purple-300">Goal Summary</span>
+                  </div>
+                  <div className="text-sm text-muted-foreground space-y-1">
+                    <div>Target: <span className="text-foreground font-bold">${Number(formData.targetAmount).toLocaleString()}</span></div>
+                    <div>Deadline: <span className="text-foreground font-bold">{format(formData.targetDate, "PPP")}</span></div>
+                    <div className="text-xs text-purple-400 mt-2">
+                      💡 Funds will be locked until goal completion to earn bonus APY
+                    </div>
+                  </div>
+                </div>
               )}
-              disabled={isLoading}
-            />
-            {errors.description && (
-              <p className="text-sm text-red-400">{errors.description}</p>
-            )}
-          </div>
-
-          {/* Goal Summary */}
-          {formData.targetAmount && formData.targetDate && (
-            <Card className="glass-card border-purple-500/20">
-              <CardContent className="p-4">
-                <h4 className="font-semibold mb-3 flex items-center gap-2">
-                  <Target className="w-4 h-4 text-purple-400" />
-                  Goal Summary
-                </h4>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <p className="text-muted-foreground">Target Amount</p>
-                    <p className="font-bold text-green-400">
-                      ${parseFloat(formData.targetAmount).toLocaleString()}
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Time to Goal</p>
-                    <p className="font-bold text-blue-400">
-                      {calculateMonthsToTarget()} months
-                    </p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground">Monthly Savings Needed</p>
-                    <p className="font-bold text-purple-400">
-                      ${calculateMonthlySavings()?.toLocaleString() || "0"}
-                    </p>
-                  </div>
-                </div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Badge variant="outline" className="border-green-500/20 text-green-400">
-                    Fund Locking Enabled
-                  </Badge>
-                  <Badge variant="outline" className="border-purple-500/20 text-purple-400">
-                    +1% Bonus APY on Completion
-                  </Badge>
-                </div>
-              </CardContent>
-            </Card>
+            </motion.div>
           )}
 
-          {/* Action Buttons */}
-          <div className="flex gap-3 pt-4">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              className="flex-1 glass border-white/10 bg-transparent"
-              disabled={isLoading}
+          {step === "processing" && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="py-12 flex flex-col items-center justify-center space-y-4"
             >
-              Cancel
-            </Button>
-            <Button
-              type="submit"
-              className="flex-1 gradient-primary text-white"
-              disabled={isLoading}
+              <Loader2 className="w-12 h-12 text-purple-500 animate-spin" />
+              <div className="text-center">
+                <p className="text-xl font-bold text-foreground">Creating Goal</p>
+                <p className="text-sm text-muted-foreground mt-1">Setting up your savings target...</p>
+              </div>
+            </motion.div>
+          )}
+
+          {step === "success" && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="py-8 flex flex-col items-center justify-center space-y-6"
             >
-              {isLoading ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Creating Goal...
-                </>
-              ) : (
-                <>
-                  <Target className="w-4 h-4 mr-2" />
-                  Create Goal
-                </>
-              )}
+              <div className="w-20 h-20 rounded-full bg-green-500/20 flex items-center justify-center ring-4 ring-green-500/10">
+                <CheckCircle2 className="w-10 h-10 text-green-400" />
+              </div>
+              <div className="text-center">
+                <p className="text-2xl font-bold text-foreground">Goal Created!</p>
+                <p className="text-sm text-muted-foreground mt-2 max-w-[280px] mx-auto">
+                  Your savings goal "{formData.name}" has been created successfully. Start contributing to unlock bonus rewards!
+                </p>
+              </div>
+              <Button onClick={reset} className="w-full gradient-primary text-white h-12 font-bold">
+                Done
+              </Button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {step === "form" && (
+          <DialogFooter>
+            <Button
+              disabled={!isFormValid || isLoading}
+              onClick={handleSubmit}
+              className="w-full gradient-primary text-white h-12 text-lg font-bold flex gap-2"
+            >
+              Create Savings Goal
+              <Target className="w-5 h-5" />
             </Button>
-          </div>
-        </form>
+          </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   )

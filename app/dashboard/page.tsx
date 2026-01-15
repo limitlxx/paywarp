@@ -30,7 +30,8 @@ import { DepositModal } from "@/components/modals/deposit-modal"
 import { useTransactionHistory } from "@/hooks/use-transaction-history"
 import { useWrappedReports } from "@/hooks/use-wrapped-reports"
 import { useBucketBalances } from "@/hooks/use-bucket-balances"
-import { formatEther, formatUnits } from "viem"
+import { AuditTray } from "@/components/audit-tray"
+import { formatUnits } from "viem"
 
 // Preference storage utilities for wrapped redirect
 const WRAPPED_VIEWED_KEY = 'paywarp-wrapped-viewed'
@@ -499,6 +500,9 @@ export default function Dashboard() {
           </Link>
             </>
           )}
+
+          {/* Audit Tray */}
+          <AuditTray />
         </div>
       </main>
 

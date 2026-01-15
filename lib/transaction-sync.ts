@@ -17,6 +17,7 @@ export interface BlockchainTransaction {
   amount: bigint
   fromBucket?: string
   toBucket?: string
+  bucket?: string // Added for API compatibility
   recipient?: string
   timestamp: Date
   blockNumber: bigint
@@ -37,6 +38,8 @@ export type TransactionType =
   | 'transfer' 
   | 'split' 
   | 'payroll' 
+  | 'yield'
+  | 'expense'
   | 'goal_created' 
   | 'goal_completed'
   | 'employee_added'
