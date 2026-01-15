@@ -27,6 +27,8 @@ export interface BlockchainTransaction {
   metadata: TransactionMetadata
   contractAddress: string
   eventName: string
+  tokenSymbol?: string
+  decimals?: number
 }
 
 export type TransactionType = 
@@ -40,6 +42,12 @@ export type TransactionType =
   | 'employee_added'
   | 'payroll_scheduled'
   | 'payroll_processed'
+  | 'erc20_transfer'
+  | 'erc20_approve'
+  | 'erc20_transferFrom'
+  | 'erc20_interaction'
+  | 'erc20_in'
+  | 'erc20_out'
 
 export type TransactionStatus = 'pending' | 'completed' | 'failed'
 

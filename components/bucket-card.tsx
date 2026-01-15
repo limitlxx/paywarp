@@ -57,7 +57,7 @@ export function BucketCard({
 }: BucketCardProps) {
   const [showDepositModal, setShowDepositModal] = useState(false)
   const [showTransferModal, setShowTransferModal] = useState(false)
-  const cardRef = useRef<HTMLElement>(null)
+  const cardRef = useRef<HTMLDivElement>(null)
   
   // Mobile and performance optimizations
   const capabilities = useMobileCapabilities()
@@ -103,8 +103,8 @@ export function BucketCard({
     getBubbleType()
   )
 
-  // Optimize touch interactions on mobile
-  useOptimizedTouch(cardRef)
+  // Optimize touch interactions on mobile - cast to HTMLElement ref
+  useOptimizedTouch(cardRef as React.RefObject<HTMLElement>)
 
   // Performance-aware animation configuration
   const animationConfig = {
@@ -144,101 +144,104 @@ export function BucketCard({
     <>
       <Card 
         ref={cardRef}
-        className="glass-card border-purple-500/20 relative overflow-hidden group hover:border-purple-500/40 transition-all cursor-pointer"
+        className="glass-card border-purple-500/20 relative overflow-hidden group hover:border-purple-500/40 transition-all"
         style={{
           transform: shouldUseGPU ? 'translateZ(0)' : 'none', // Force GPU acceleration when beneficial
           transition: `all ${animationConfig.duration}ms ease-out`,
         }}
       >
-        <Link href={`/buckets/${id}`}>
-          <YieldBubbles
-            active={bubbleCount > 0}
-            type={getBubbleType()}
-            color={color}
-          />
-          <CardContent className="p-6">
-            <div className="flex justify-between items-start mb-6">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2">
-                  <div className={`p-2 rounded-lg bg-opacity-10`} style={{ backgroundColor: `${color}20` }}>
-                    {isLoading || isTransactionLoading() ? (
-                      <Loader2 className="w-5 h-5 animate-spin" style={{ color }} />
-                    ) : (
-                      <Icon className="w-5 h-5" style={{ color }} />
+        <YieldBubbles
+          active={bubbleCount > 0}
+          type={getBubbleType()}
+          color={color}
+        />
+        <CardContent className="p-6">
+            <Link href={`/buckets/${id}`} className="block">
+              <div className="flex justify-between items-start mb-6">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <div className={`p-2 rounded-lg bg-opacity-10`} style={{ backgroundColor: `${color}20` }}>
+                      {isLoading || isTransactionLoading() ? (
+                        <Loader2 className="w-5 h-5 animate-spin" style={{ color }} />
+                      ) : (
+                        <Icon className="w-5 h-5" style={{ color }} />
+                      )}
+                    </div>
+                    <h3 className="text-xl font-bold text-foreground">{name}</h3>
+                    {error && (
+                      <AlertCircle 
+                        className="w-4 h-4 text-red-400 cursor-pointer" 
+                        onClick={onRefresh}
+                      />
                     )}
                   </div>
-                  <h3 className="text-xl font-bold text-foreground">{name}</h3>
-                  {error && (
-                    <AlertCircle 
-                      className="w-4 h-4 text-red-400 cursor-pointer" 
-                      onClick={onRefresh}
-                    />
+                  <p className="text-sm text-muted-foreground">{description}</p>
+                  {lastUpdated && (
+                    <p className="text-xs text-muted-foreground/60">
+                      Updated: {lastUpdated.toLocaleTimeString()}
+                    </p>
                   )}
                 </div>
-                <p className="text-sm text-muted-foreground">{description}</p>
-                {lastUpdated && (
-                  <p className="text-xs text-muted-foreground/60">
-                    Updated: {lastUpdated.toLocaleTimeString()}
-                  </p>
-                )}
+
+                <CircularLiquidFill 
+                  percentage={currentPercentage} 
+                  color={color} 
+                  size={capabilities.screenSize === 'small' ? 70 : 80}
+                  variant={getLiquidVariant()}
+                />
               </div>
 
-              <CircularLiquidFill 
-                percentage={currentPercentage} 
-                color={color} 
-                size={capabilities.screenSize === 'small' ? 70 : 80}
-                variant={getLiquidVariant()}
-              />
-            </div>
+              <div className="space-y-4">
+                <div>
+                  <CurrencyDisplay 
+                    amount={balance} 
+                    fromCurrency="USD" 
+                    className="text-3xl font-bold text-foreground"
+                    loading={isLoading}
+                  />
+                  {(isYielding || apy) && (
+                    <span className="ml-2 text-sm font-medium text-green-400 bg-green-400/10 px-2 py-0.5 rounded-full">
+                      +{apy || 8}% APY
+                    </span>
+                  )}
+                </div>
+
+                {/* RWA Balance Display */}
+                {(usdyBalance > 0 || musdBalance > 0 || totalYieldEarned > 0) && (
+                  <div className="space-y-2 p-3 rounded-lg bg-background/50 border border-border/50">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-medium text-muted-foreground">RWA Holdings</span>
+                      <span className="text-xs text-green-400">
+                        +<CurrencyDisplay amount={totalYieldEarned} fromCurrency="USD" className="text-xs" />
+                      </span>
+                    </div>
+                    
+                    {usdyBalance > 0 && (
+                      <div className="flex justify-between text-xs">
+                        <span className="text-muted-foreground">USDY:</span>
+                        <span className="font-mono">{usdyBalance.toFixed(4)}</span>
+                      </div>
+                    )}
+                    
+                    {musdBalance > 0 && (
+                      <div className="flex justify-between text-xs">
+                        <span className="text-muted-foreground">mUSD:</span>
+                        <span className="font-mono">{musdBalance.toFixed(4)}</span>
+                      </div>
+                    )}
+                    
+                    {currentRWAValue > 0 && (
+                      <div className="flex justify-between text-xs border-t border-border/30 pt-2">
+                        <span className="text-muted-foreground">Total RWA Value:</span>
+                        <CurrencyDisplay amount={currentRWAValue} fromCurrency="USD" className="text-xs font-medium" />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </Link>
 
             <div className="space-y-4">
-              <div>
-                <CurrencyDisplay 
-                  amount={balance} 
-                  fromCurrency="USD" 
-                  className="text-3xl font-bold text-foreground"
-                  loading={isLoading}
-                />
-                {(isYielding || apy) && (
-                  <span className="ml-2 text-sm font-medium text-green-400 bg-green-400/10 px-2 py-0.5 rounded-full">
-                    +{apy || 8}% APY
-                  </span>
-                )}
-              </div>
-
-              {/* RWA Balance Display */}
-              {(usdyBalance > 0 || musdBalance > 0 || totalYieldEarned > 0) && (
-                <div className="space-y-2 p-3 rounded-lg bg-background/50 border border-border/50">
-                  <div className="flex justify-between items-center">
-                    <span className="text-xs font-medium text-muted-foreground">RWA Holdings</span>
-                    <span className="text-xs text-green-400">
-                      +<CurrencyDisplay amount={totalYieldEarned} fromCurrency="USD" className="text-xs" />
-                    </span>
-                  </div>
-                  
-                  {usdyBalance > 0 && (
-                    <div className="flex justify-between text-xs">
-                      <span className="text-muted-foreground">USDY:</span>
-                      <span className="font-mono">{usdyBalance.toFixed(4)}</span>
-                    </div>
-                  )}
-                  
-                  {musdBalance > 0 && (
-                    <div className="flex justify-between text-xs">
-                      <span className="text-muted-foreground">mUSD:</span>
-                      <span className="font-mono">{musdBalance.toFixed(4)}</span>
-                    </div>
-                  )}
-                  
-                  {currentRWAValue > 0 && (
-                    <div className="flex justify-between text-xs border-t border-border/30 pt-2">
-                      <span className="text-muted-foreground">Total RWA Value:</span>
-                      <CurrencyDisplay amount={currentRWAValue} fromCurrency="USD" className="text-xs font-medium" />
-                    </div>
-                  )}
-                </div>
-              )}
-
               <div className="flex gap-2">
                 <Button
                   size={capabilities.screenSize === 'small' ? 'sm' : 'default'}
@@ -267,7 +270,6 @@ export function BucketCard({
               </div>
             </div>
           </CardContent>
-        </Link>
 
         <div
           className="absolute bottom-0 left-0 w-full h-1 opacity-20 group-hover:opacity-100 transition-opacity"

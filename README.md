@@ -46,7 +46,6 @@ NEXT_PUBLIC_USDC_TOKEN_SEPOLIA=0x93B3e03e9Ca401Ca79150C406a74430F1ff70EA8
 NEXT_PUBLIC_USDY_TOKEN_SEPOLIA=0xCE6C8F97241f455A3498711C28D468A50559673f
 NEXT_PUBLIC_MUSD_TOKEN_SEPOLIA=0xA61F1287B3aC96D7B6ab75e6190DEcaad68Ad641
 
-
 # WalletConnect (Required - Get free at https://cloud.walletconnect.com)
 NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=your_project_id_here
 
@@ -305,7 +304,7 @@ node test-transaction-sync-fix.js
 ### Learn More
 
 - Read the [full README](./README.md)
-- Check out [API Documentation](./API_DOCUMENTATION.md)
+- Check out [API Documentation](./app/api/API_DOCUMENTATION.md)
 - Review [Deployment Guide](./DEPLOYMENT_GUIDE.md)
 - See [Submission Details](./SUBMISSION.md)
 

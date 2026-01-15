@@ -16,9 +16,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ArrowRightLeft, CheckCircle2, Loader2, ArrowRight } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import { useBlockchainBuckets } from "@/hooks/use-blockchain-buckets"
-import { useWallet } from "@/hooks/use-wallet.tsx"
+import { useWallet } from "@/hooks/use-wallet"
 import { useToast } from "@/hooks/use-toast"
 import type { BucketType } from "@/lib/types"
+import { useEffect } from "react"
 
 interface TransferModalProps {
   open: boolean
@@ -34,6 +35,13 @@ export function TransferModal({ open, onOpenChange, initialFromId }: TransferMod
   const { transferBetweenBuckets, buckets, getBucket, isLoading } = useBlockchainBuckets()
   const { isConnected, connect } = useWallet()
   const { toast } = useToast()
+
+  // Update fromId when initialFromId changes
+  useEffect(() => {
+    if (initialFromId) {
+      setFromId(initialFromId)
+    }
+  }, [initialFromId])
 
   const fromBucket = getBucket(fromId)
   const toBucket = getBucket(toId)
@@ -56,9 +64,12 @@ export function TransferModal({ open, onOpenChange, initialFromId }: TransferMod
     
     try {
       const numAmount = Number(amount)
+      console.log('🔄 Initiating transfer:', { fromId, toId, amount: numAmount })
       await transferBetweenBuckets(fromId, toId, numAmount)
+      console.log('✅ Transfer successful')
       setStep("success")
     } catch (err) {
+      console.error('❌ Transfer error:', err)
       const errorMessage = err instanceof Error ? err.message : 'Transfer failed'
       toast({
         title: "Transfer Failed",
@@ -72,13 +83,23 @@ export function TransferModal({ open, onOpenChange, initialFromId }: TransferMod
   const reset = () => {
     setStep("setup")
     setAmount("")
+    if (initialFromId) {
+      setFromId(initialFromId)
+    }
     onOpenChange(false)
+  }
+
+  const handleClose = (open: boolean) => {
+    if (!open) {
+      reset()
+    }
+    onOpenChange(open)
   }
 
   const isValid = amount && Number(amount) > 0 && Number(amount) <= (fromBucket?.balance || 0) && fromId !== toId
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="glass border-purple-500/20 sm:max-w-md bg-black/90 backdrop-blur-2xl">
         <DialogHeader>
           <DialogTitle className="text-2xl font-bold flex items-center gap-2">

@@ -155,11 +155,6 @@ export function useOptimizedBlockchainBuckets() {
       return
     }
 
-    if (!bucketVaultContract) {
-      setError('Contracts not deployed on current network. Please switch to Sepolia testnet.')
-      return
-    }
-
     // Rate limiting check
     const now = Date.now()
     if (now - lastFetchTime < MIN_FETCH_INTERVAL) {
@@ -177,68 +172,68 @@ export function useOptimizedBlockchainBuckets() {
       setIsLoading(true)
       setError(null)
 
-      // Adjust batch size based on device capabilities
-      const batchSize = capabilities.performanceLevel === 'low' ? 2 : 
-                       capabilities.performanceLevel === 'medium' ? 3 : 5
+      console.log('📊 Fetching bucket balances from API for:', address)
 
-      // Process buckets in batches for better performance on mobile
-      const bucketBatches = []
-      for (let i = 0; i < defaultBuckets.length; i += batchSize) {
-        bucketBatches.push(defaultBuckets.slice(i, i + batchSize))
+      // Fetch from managed wallet API
+      const response = await fetch(`/api/managed-wallet/buckets?address=${address}`)
+      
+      if (!response.ok) {
+        throw new Error('Failed to fetch bucket data from API')
       }
 
-      const allBuckets: BlockchainBucket[] = []
+      const result = await response.json()
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Failed to fetch bucket data')
+      }
 
-      for (const batch of bucketBatches) {
-        const bucketPromises = batch.map(async (bucketConfig) => {
-          try {
-            const bucketBalance = await bucketVaultContract.read.getBucketBalance([
-              address,
-              bucketConfig.id
-            ]) as BucketBalance
+      const { balances, splitConfig: config } = result.data
 
-            const balance = Number(formatUnits(bucketBalance.balance, 18))
-            const yieldBalance = Number(formatUnits(bucketBalance.yieldBalance, 18))
-
-            return {
-              ...bucketConfig,
-              balance: balance + yieldBalance,
-              contractBalance: bucketBalance.balance,
-              yieldBalance: bucketBalance.yieldBalance,
-              isYielding: bucketBalance.isYielding,
-              lastUpdated: new Date(),
-            }
-          } catch (err) {
-            console.error(`Error fetching balance for bucket ${bucketConfig.id}:`, err)
-            return {
-              ...bucketConfig,
-              balance: 0,
-              contractBalance: BigInt(0),
-              yieldBalance: BigInt(0),
-              isYielding: false,
-              lastUpdated: new Date(),
-            }
+      // Transform API data to bucket format
+      const allBuckets: BlockchainBucket[] = defaultBuckets.map(bucketConfig => {
+        const apiBalance = balances[bucketConfig.id]
+        
+        if (!apiBalance) {
+          return {
+            ...bucketConfig,
+            balance: 0,
+            contractBalance: BigInt(0),
+            yieldBalance: BigInt(0),
+            isYielding: false,
+            lastUpdated: new Date(),
           }
-        })
-
-        const batchResults = await Promise.all(bucketPromises)
-        allBuckets.push(...batchResults)
-
-        // Add small delay between batches on slow connections
-        if (capabilities.connectionType === 'slow' && bucketBatches.length > 1) {
-          await new Promise(resolve => setTimeout(resolve, 100))
         }
-      }
+
+        const balance = Number(formatUnits(BigInt(apiBalance.balance), 18))
+        const yieldBalance = Number(formatUnits(BigInt(apiBalance.yieldBalance), 18))
+
+        return {
+          ...bucketConfig,
+          balance: balance + yieldBalance,
+          contractBalance: BigInt(apiBalance.balance),
+          yieldBalance: BigInt(apiBalance.yieldBalance),
+          isYielding: apiBalance.isYielding,
+          lastUpdated: new Date(),
+        }
+      })
 
       setBuckets(allBuckets)
 
-      // Also fetch split configuration
-      try {
-        const config = await bucketVaultContract.read.getSplitConfig([address]) as SplitConfig
-        setSplitConfig(config)
-      } catch (err) {
-        console.error('Error fetching split config:', err)
+      // Set split configuration
+      if (config) {
+        setSplitConfig({
+          billingsPercent: BigInt(config.billingsPercent),
+          savingsPercent: BigInt(config.savingsPercent),
+          growthPercent: BigInt(config.growthPercent),
+          instantPercent: BigInt(config.instantPercent),
+          spendablePercent: BigInt(config.spendablePercent),
+        })
       }
+
+      console.log('✅ Successfully fetched bucket balances:', allBuckets.map(b => ({
+        id: b.id,
+        balance: b.balance
+      })))
 
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Failed to fetch bucket data'
@@ -248,7 +243,7 @@ export function useOptimizedBlockchainBuckets() {
       setIsLoading(false)
       setLastFetchTime(Date.now()) // Update last fetch time
     }
-  }, [bucketVaultContract, address, isConnected, capabilities])
+  }, [address, isConnected, capabilities, isLoading, lastFetchTime])
 
   // Debounced fetch function to prevent rapid successive calls
   const debouncedFetchBucketBalances = useCallback(() => {
