@@ -1,7 +1,6 @@
 "use client"
 
 import { BottomNav } from "@/components/bottom-nav"
-import { SimpleHeader } from "@/components/simple-header"
 import { AuthGuard } from "@/components/auth-guard"
 import { BucketCard } from "@/components/bucket-card"
 import { RWADashboard } from "@/components/rwa-dashboard"
@@ -35,7 +34,6 @@ export default function BucketsPage() {
   // Get real bucket data from contract
   const { 
     buckets: contractBuckets, 
-    totalBalance,
     formattedTotalBalance,
     splitConfig,
     nonce,
@@ -127,7 +125,7 @@ export default function BucketsPage() {
   // Optimized refresh handler with loading state
   const handleRefresh = async () => {
     await loadingManager.withLoading(
-      () => refreshBalances(),
+      async () => { await refreshBalances() },
       {
         type: 'balance',
         description: 'Refreshing bucket balances',
@@ -140,7 +138,7 @@ export default function BucketsPage() {
   const handleConnect = async () => {
     try {
       await loadingManager.withLoading(
-        () => connect(),
+        async () => { await connect() },
         {
           type: 'network',
           description: 'Connecting wallet',

@@ -120,8 +120,8 @@ export function SavingsGoalModal({ open, onOpenChange }: SavingsGoalModalProps) 
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="glass border-purple-500/20 sm:max-w-md bg-black/90 backdrop-blur-2xl">
-        <DialogHeader>
+      <DialogContent className="glass border-purple-500/20 sm:max-w-lg max-h-[90vh] bg-black/90 backdrop-blur-2xl flex flex-col">
+        <DialogHeader className="flex-shrink-0">
           <DialogTitle className="text-2xl font-bold flex items-center gap-2">
             <div className="p-2 rounded-xl bg-purple-500/20">
               <Target className="w-5 h-5 text-purple-400" />
@@ -133,9 +133,10 @@ export function SavingsGoalModal({ open, onOpenChange }: SavingsGoalModalProps) 
           </DialogDescription>
         </DialogHeader>
 
-        <AnimatePresence mode="wait">
-          {step === "form" && (
-            <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 py-4">
+        <div className="flex-1 overflow-y-auto pr-2 -mr-2">
+          <AnimatePresence mode="wait">
+            {step === "form" && (
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 py-4">
               <div className="space-y-2">
                 <Label htmlFor="goal-name" className="text-purple-300 font-bold">
                   Goal Name
@@ -267,9 +268,10 @@ export function SavingsGoalModal({ open, onOpenChange }: SavingsGoalModalProps) 
             </motion.div>
           )}
         </AnimatePresence>
+        </div>
 
         {step === "form" && (
-          <DialogFooter>
+          <DialogFooter className="flex-shrink-0">
             <Button
               disabled={!isFormValid || isLoading}
               onClick={handleSubmit}

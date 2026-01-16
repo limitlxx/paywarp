@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { ArrowUpRight, ArrowDownLeft, LucideIcon, Loader2, AlertCircle } from "lucide-react"
 import Link from "next/link"
 import { useState, useRef, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { DepositModal } from "@/components/modals/deposit-modal"
 import { TransferModal } from "@/components/modals/transfer-modal"
 import { CurrencyDisplay } from "@/components/currency-display"
@@ -57,7 +58,9 @@ export function BucketCard({
 }: BucketCardProps) {
   const [showDepositModal, setShowDepositModal] = useState(false)
   const [showTransferModal, setShowTransferModal] = useState(false)
+  const [isNavigating, setIsNavigating] = useState(false)
   const cardRef = useRef<HTMLDivElement>(null)
+  const router = useRouter()
   
   // Mobile and performance optimizations
   const capabilities = useMobileCapabilities()
@@ -124,6 +127,16 @@ export function BucketCard({
     setShowTransferModal(true)
   }
 
+  const handleCardClick = (e: React.MouseEvent) => {
+    // Don't navigate if clicking on buttons
+    if ((e.target as HTMLElement).closest('button')) {
+      return
+    }
+    
+    setIsNavigating(true)
+    router.push(`/buckets/${id}`)
+  }
+
   // Handle optimized tap events on mobile
   useEffect(() => {
     const handleOptimizedTap = (e: CustomEvent) => {
@@ -144,19 +157,29 @@ export function BucketCard({
     <>
       <Card 
         ref={cardRef}
-        className="glass-card border-purple-500/20 relative overflow-hidden group hover:border-purple-500/40 transition-all"
+        className="glass-card border-purple-500/20 relative overflow-hidden group hover:border-purple-500/40 transition-all cursor-pointer"
+        onClick={handleCardClick}
         style={{
           transform: shouldUseGPU ? 'translateZ(0)' : 'none', // Force GPU acceleration when beneficial
           transition: `all ${animationConfig.duration}ms ease-out`,
         }}
       >
+        {/* Loading overlay when navigating */}
+        {isNavigating && (
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center">
+            <div className="flex flex-col items-center gap-3">
+              <Loader2 className="w-8 h-8 animate-spin text-purple-400" />
+              <p className="text-sm text-purple-300 font-medium">Loading bucket details...</p>
+            </div>
+          </div>
+        )}
+        
         <YieldBubbles
           active={bubbleCount > 0}
           type={getBubbleType()}
           color={color}
         />
         <CardContent className="p-6">
-            <Link href={`/buckets/${id}`} className="block">
               <div className="flex justify-between items-start mb-6">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2">
@@ -239,15 +262,14 @@ export function BucketCard({
                   </div>
                 )}
               </div>
-            </Link>
 
-            <div className="space-y-4">
+            <div className="space-y-4 mt-4">
               <div className="flex gap-2">
                 <Button
                   size={capabilities.screenSize === 'small' ? 'sm' : 'default'}
                   className="flex-1 glass border-purple-500/20 hover:bg-purple-500/20 text-foreground gap-1"
                   onClick={handleDepositClick}
-                  disabled={isLoading || isTransactionLoading()}
+                  disabled={isLoading || isTransactionLoading() || isNavigating}
                   style={{
                     minHeight: capabilities.hasTouch ? '44px' : 'auto', // Touch-friendly minimum height
                   }}
@@ -259,7 +281,7 @@ export function BucketCard({
                   size={capabilities.screenSize === 'small' ? 'sm' : 'default'}
                   className="flex-1 glass border-purple-500/20 hover:bg-purple-500/20 text-foreground gap-1"
                   onClick={handleTransferClick}
-                  disabled={isLoading || isTransactionLoading()}
+                  disabled={isLoading || isTransactionLoading() || isNavigating}
                   style={{
                     minHeight: capabilities.hasTouch ? '44px' : 'auto', // Touch-friendly minimum height
                   }}

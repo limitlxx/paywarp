@@ -43,6 +43,9 @@ export function useSavingsGoals() {
   const bucketVaultContract = useContract('bucketVault', currentNetwork)
   const bucketVaultWriteContract = useContractWrite('bucketVault', currentNetwork)
   
+  // Memoize contract address to prevent re-renders
+  const contractAddress = bucketVaultContract?.address
+  
   // State management
   const [goals, setGoals] = useState<SavingsGoal[]>([])
   const [isLoading, setIsLoading] = useState(false)
@@ -326,9 +329,11 @@ export function useSavingsGoals() {
     address: bucketVaultContract?.address,
     abi: bucketVaultContract?.abi,
     eventName: 'GoalCreated',
+    enabled: !!contractAddress,
     onLogs: (logs) => {
       console.log('GoalCreated event detected:', logs)
-      fetchSavingsGoals()
+      // Debounce the fetch to avoid rapid re-renders
+      setTimeout(() => fetchSavingsGoals(), 1000)
     },
   })
 
@@ -336,6 +341,7 @@ export function useSavingsGoals() {
     address: bucketVaultContract?.address,
     abi: bucketVaultContract?.abi,
     eventName: 'GoalCompleted',
+    enabled: !!contractAddress,
     onLogs: (logs) => {
       console.log('GoalCompleted event detected:', logs)
       
@@ -353,13 +359,14 @@ export function useSavingsGoals() {
         }
       })
       
-      fetchSavingsGoals()
+      // Debounce the fetch to avoid rapid re-renders
+      setTimeout(() => fetchSavingsGoals(), 1000)
     },
   })
 
   // Initial data fetch and refresh on connection changes
   useEffect(() => {
-    if (isConnected && address && bucketVaultContract) {
+    if (isConnected && address && contractAddress) {
       fetchSavingsGoals()
     } else {
       // Clear data when disconnected
@@ -367,7 +374,8 @@ export function useSavingsGoals() {
       setGoalCount(0)
       setError(null)
     }
-  }, [isConnected, address, bucketVaultContract, fetchSavingsGoals])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isConnected, address, contractAddress])
 
   // Clean up old pending transactions
   useEffect(() => {
