@@ -360,6 +360,13 @@ export function OnboardingFlow() {
             <div className="mt-10 flex flex-col items-center gap-8">
               <div className="flex items-center gap-2 text-sm text-zinc-500">
                 Powered by
+                {/* <div className="flex items-center gap-1.5">
+                  <img 
+                    src="/mantle-logo-light.svg" 
+                    alt="Mantle" 
+                    className="h-5 w-auto"
+                  />
+                </div> */}
                 <div className="flex items-center gap-1.5 text-white font-bold tracking-tight uppercase">
                   <div className="w-5 h-5 rounded-full bg-white flex items-center justify-center">
                     <div className="w-3 h-3 rounded-full bg-black" />
@@ -369,8 +376,15 @@ export function OnboardingFlow() {
               </div>
 
               <div className="text-[10px] text-zinc-600 font-medium tracking-wide">
-                Built with ❤️ by <span className="underline underline-offset-4 decoration-zinc-800">Limitlxx</span>
-        
+                Built with ❤️ by{' '}
+                <a 
+                  href="https://x.com/afriquartz" 
+                  target="_blank" 
+                  rel="noopener noreferrer"
+                  className="underline underline-offset-4 decoration-zinc-800 hover:text-zinc-400 transition-colors"
+                >
+                  Afriquartz
+                </a>
               </div>
             </div>
           </motion.div>

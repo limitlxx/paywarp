@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useAccount, useSignMessage } from 'wagmi';
+import { useAccount, useReadContract, useSignMessage } from 'wagmi';
 import Link from 'next/link';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
@@ -11,6 +11,7 @@ import { useUserRegistration, generateRegistrationMessage, createMessageHash } f
 import { CONTRACT_ADDRESSES } from '../types/contracts';
 import { toast } from 'sonner';
 import { ethers } from 'ethers';
+import UserRegistryABI from '../lib/abis/UserRegistryUpgradeable.json';
 
 interface UserRegistrationProps {
   onRegistrationComplete?: () => void;
@@ -364,16 +365,44 @@ export function UserRegistration({ onRegistrationComplete, showCommunityStats = 
  * Community statistics component for landing page
  */
 export function CommunityStats() {
-  const { totalUsers } = useUserRegistration();
-  const { chainId } = useAccount();
+  const { chainId: connectedChainId } = useAccount();
+  
+  // Use connected chainId or fallback to Mantle Sepolia (5003)
+  const chainId = connectedChainId || 5003;
+  
+  // Get contract address for the chainId
+  const getContractAddress = () => {
+    if (!CONTRACT_ADDRESSES[chainId]) {
+      return undefined;
+    }
+    const address = CONTRACT_ADDRESSES[chainId].UserRegistry;
+    if (!address || address === '0x0000000000000000000000000000000000000000') {
+      return undefined;
+    }
+    return address as `0x${string}`;
+  };
 
-  // Always show community stats, regardless of contract deployment
+  const contractAddress = getContractAddress();
+
+  // Fetch total users directly without requiring wallet connection
+  const { data: totalUsers } = useReadContract({
+    address: contractAddress,
+    abi: UserRegistryABI as any,
+    functionName: 'getTotalUsers',
+    query: {
+      enabled: !!contractAddress,
+      refetchInterval: 30000,
+    },
+  });
+
+  const userCount = totalUsers ? Number(totalUsers) : 0;
+
   return (
     <div className="flex items-center gap-2 text-sm text-muted-foreground">
       <Users className="h-4 w-4" />
       <span>
-        {totalUsers > 0 
-          ? `Join ${totalUsers.toLocaleString()} registered users`
+        {userCount > 0 
+          ? `Join ${userCount.toLocaleString()} registered users`
           : 'Join our growing community'
         }
       </span>
