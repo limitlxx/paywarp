@@ -23,13 +23,14 @@ import {
 } from "lucide-react"
 import { format } from "date-fns"
 import { useTransactionHistory } from "@/hooks/use-transaction-history"
+import { useExpenseAudit } from "@/hooks/use-expense-audit"
 import { useWallet } from "@/hooks/use-wallet"
 
 export interface AuditTransaction {
   id: string
   hash: string
   timestamp: Date
-  type: 'deposit' | 'withdrawal' | 'transfer' | 'yield' | 'payroll' | 'expense'
+  type: 'deposit' | 'withdrawal' | 'transfer' | 'yield' | 'payroll' | 'expense' | 'recurring_expense'
   amount: string
   tokenSymbol: string
   description: string
@@ -52,6 +53,7 @@ interface AuditFilters {
 
 export function AuditTray() {
   const { transactions, isLoading, refreshHistory } = useTransactionHistory()
+  const { expenseAudit, isLoading: expenseLoading, refreshExpenseAudit } = useExpenseAudit()
   const { address } = useWallet()
   
   // Local state for filters and search
@@ -65,7 +67,7 @@ export function AuditTray() {
   
   // Convert blockchain transactions to audit format
   const auditTransactions = useMemo<AuditTransaction[]>(() => {
-    return transactions.map(tx => ({
+    const blockchainTxs = transactions.map(tx => ({
       id: tx.id,
       hash: tx.hash,
       timestamp: tx.timestamp,
@@ -79,7 +81,26 @@ export function AuditTray() {
       bucket: tx.bucket,
       blockNumber: tx.blockNumber?.toString(),
     }))
-  }, [transactions])
+
+    // Convert expense audit transactions
+    const expenseTxs = expenseAudit.map(exp => ({
+      id: exp.id,
+      hash: exp.hash || '',
+      timestamp: exp.timestamp,
+      type: exp.type as AuditTransaction['type'],
+      amount: exp.amount,
+      tokenSymbol: exp.tokenSymbol,
+      description: exp.description,
+      status: exp.status as AuditTransaction['status'],
+      bucket: exp.bucket,
+      blockNumber: '',
+    }))
+
+    // Combine and sort by timestamp
+    return [...blockchainTxs, ...expenseTxs].sort((a, b) => 
+      b.timestamp.getTime() - a.timestamp.getTime()
+    )
+  }, [transactions, expenseAudit])
 
   // Filter transactions based on current filters
   const filteredTransactions = useMemo(() => {
@@ -233,13 +254,16 @@ export function AuditTray() {
           </div>
           <div className="flex items-center gap-2">
             <Button
-              onClick={refreshHistory}
+              onClick={async () => {
+                await refreshHistory()
+                await refreshExpenseAudit()
+              }}
               size="sm"
               variant="outline"
               className="glass border-blue-500/20 text-blue-400 gap-1"
-              disabled={isLoading}
+              disabled={isLoading || expenseLoading}
             >
-              <RefreshCw className={`w-3 h-3 ${isLoading ? 'animate-spin' : ''}`} />
+              <RefreshCw className={`w-3 h-3 ${isLoading || expenseLoading ? 'animate-spin' : ''}`} />
               Sync
             </Button>
             <Button
@@ -286,6 +310,7 @@ export function AuditTray() {
                 <SelectItem value="yield">Yield</SelectItem>
                 <SelectItem value="payroll">Payroll</SelectItem>
                 <SelectItem value="expense">Expenses</SelectItem>
+                <SelectItem value="recurring_expense">Recurring Expenses</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -374,7 +399,7 @@ export function AuditTray() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {isLoading ? (
+              {isLoading || expenseLoading ? (
                 <TableRow>
                   <TableCell colSpan={7} className="text-center py-8">
                     <div className="flex items-center justify-center gap-2">

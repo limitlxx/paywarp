@@ -35,6 +35,7 @@ import { useState, useMemo } from "react"
 import { ExpenseManager } from "@/components/expense-manager"
 import { PayrollManager } from "@/components/payroll-manager"
 import { SavingsGoalsManager } from "@/components/savings-goals-manager"
+import { RecurringExpensesManager } from "@/components/recurring-expenses-manager"
 import { SavingsGoalOverview } from "@/components/savings-goal-overview"
 import { DepositModal } from "@/components/modals/deposit-modal"
 import { WithdrawModal } from "@/components/modals/withdraw-modal"
@@ -513,7 +514,12 @@ export default function BucketDetails() {
             </TabsContent>
 
             <TabsContent value="actions" className="space-y-6">
-              {id === "billings" && <ExpenseManager />}
+              {id === "billings" && (
+                <>
+                  <ExpenseManager />
+                  <RecurringExpensesManager />
+                </>
+              )}
               {id === "instant" && <PayrollManager />}
               {id === "savings" && <SavingsGoalsManager />}
 

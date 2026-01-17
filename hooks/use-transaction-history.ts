@@ -99,7 +99,7 @@ export function useTransactionHistory(): UseTransactionHistoryReturn {
           address, 
           {
             includePayroll: true,
-            maxBlocks: 200, // More blocks for regular sync
+            maxBlocks: 1000, // Conservative limit to avoid RPC errors (Mantle limit is 30k)
             useCache: true,
             ...options
           }

@@ -7,9 +7,9 @@ import { LayoutDashboard, Settings, Scan, PaintBucket, History } from "lucide-re
 
 const navItems = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard" },
-  { icon: PaintBucket, label: "Buckets", href: "/buckets" }, // Hidden for gradual release
+  { icon: PaintBucket, label: "Buckets", href: "/buckets" },
   { icon: Scan, label: "Expenses", href: "/expenses" },
-  { icon: History, label: "History", href: "/history" }, // Hidden for gradual release
+  { icon: History, label: "History", href: "/history" },
   { icon: Settings, label: "Settings", href: "/settings" },
 ]
 

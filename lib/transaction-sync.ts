@@ -969,11 +969,27 @@ export class TransactionSyncService {
       const fromBlock = options.fromBlock || (defaultFromBlock > BigInt(0) ? defaultFromBlock : BigInt(0))
       const toBlock = options.toBlock || currentBlock
       
-      // Ensure we don't exceed reasonable limits (ultra conservative: 100 blocks max)
-      const maxBlockRange = BigInt(options.maxBlocks || 100)
+      // Ensure we don't exceed RPC provider limits
+      // Mantle Sepolia has a 30,000 block limit, so we cap at 20,000 to be safe
+      const maxBlockRange = BigInt(Math.min(options.maxBlocks || 100, 20000))
       const actualFromBlock = toBlock - maxBlockRange > fromBlock ? toBlock - maxBlockRange : fromBlock
       
-      console.log(`Syncing transactions from block ${actualFromBlock} to ${toBlock} (${toBlock - actualFromBlock + BigInt(1)} blocks)`)
+      // Double-check that the range doesn't exceed 20,000 blocks
+      const actualRange = toBlock - actualFromBlock + BigInt(1)
+      if (actualRange > BigInt(20000)) {
+        console.warn(`Block range ${actualRange} exceeds safe limit, capping to 20,000 blocks`)
+        const cappedFromBlock = toBlock - BigInt(19999) // 20,000 blocks total
+        return this.syncHistoricalTransactions(userAddress, {
+          ...options,
+          fromBlock: cappedFromBlock > BigInt(0) ? cappedFromBlock : BigInt(0),
+          toBlock,
+          maxBlocks: 20000
+        })
+      }
+      
+      console.log(`Syncing transactions from block ${actualFromBlock} to ${toBlock} (${actualRange} blocks)`)
+      console.log(`  Max allowed by RPC: 30,000 blocks`)
+      console.log(`  Safe limit used: 20,000 blocks`)
       
       // Sync BucketVault transactions
       const bucketTransactions = await this.syncBucketVaultTransactions(

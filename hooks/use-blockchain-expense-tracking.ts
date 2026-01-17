@@ -59,15 +59,21 @@ export function useBlockchainExpenseTracking() {
     expenseCount: 0,
     byCategory: {}
   })
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(true) // Start with true to show loading initially
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   // Load expenses from blockchain
   const loadExpenses = useCallback(async () => {
-    if (!readContract || !address) return
+    if (!readContract || !address) {
+      console.log('Contract or address not available:', { readContract: !!readContract, address: !!address })
+      setIsLoading(false) // Ensure loading is false when contract/address not available
+      return
+    }
 
     setIsLoading(true)
     try {
+      console.log('Loading expenses from blockchain for address:', address)
+      
       // Get user expenses
       const userExpenses = await readContract.read.getUserExpenses([address])
       const formattedExpenses = userExpenses.map((expense: any) => ({
@@ -84,6 +90,7 @@ export function useBlockchainExpenseTracking() {
         createdAt: expense.createdAt
       }))
       setExpenses(formattedExpenses)
+      console.log('Loaded expenses:', formattedExpenses.length)
 
       // Get recurring expenses
       const userRecurring = await readContract.read.getUserRecurringExpenses([address])
@@ -100,6 +107,7 @@ export function useBlockchainExpenseTracking() {
         createdAt: recurring.createdAt
       }))
       setRecurringExpenses(formattedRecurring)
+      console.log('Loaded recurring expenses:', formattedRecurring.length)
 
       // Get stats
       const totalAmount = await readContract.read.getUserTotalExpenses([address])
@@ -114,7 +122,13 @@ export function useBlockchainExpenseTracking() {
 
     } catch (error) {
       console.error('Error loading expenses from blockchain:', error)
-      toast.error('Failed to load expenses from blockchain')
+      
+      // Check if it's a rate limiting error
+      if (error instanceof Error && (error.message.includes('429') || error.message.includes('Too Many Requests'))) {
+        toast.error('Rate limit exceeded. Please wait a moment before refreshing.')
+      } else {
+        toast.error('Failed to load expenses from blockchain')
+      }
     } finally {
       setIsLoading(false)
     }
@@ -122,8 +136,19 @@ export function useBlockchainExpenseTracking() {
 
   // Load expenses on mount and when dependencies change
   useEffect(() => {
-    loadExpenses()
-  }, [loadExpenses])
+    console.log('useBlockchainExpenseTracking effect triggered:', {
+      address: !!address,
+      readContract: !!readContract,
+      writeContract: !!writeContract
+    })
+    
+    if (address && readContract) {
+      loadExpenses()
+    } else {
+      // If no address or contract, set loading to false
+      setIsLoading(false)
+    }
+  }, [address, readContract]) // Remove loadExpenses from dependencies to prevent infinite loop
 
   // Add expense to blockchain
   const addExpense = useCallback(async (receiptData: DynamicReceiptData, receiptHash?: string) => {
