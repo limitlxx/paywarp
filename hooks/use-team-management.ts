@@ -1,11 +1,65 @@
 "use client"
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAccount, usePublicClient, useWalletClient } from 'wagmi'
 import { parseUnits, formatUnits, isAddress } from 'viem'
 import { useContract, useContractWrite } from '@/lib/contracts'
 import { useNetwork } from './use-network'
 import type { PayrollEntry, PayrollBatch } from '@/lib/types'
+
+// Cache and throttling utilities
+interface CacheEntry<T> {
+  data: T
+  timestamp: number
+  ttl: number
+}
+
+class RequestCache {
+  private cache = new Map<string, CacheEntry<any>>()
+  private pendingRequests = new Map<string, Promise<any>>()
+  
+  async get<T>(key: string, fetcher: () => Promise<T>, ttl: number = 30000): Promise<T> {
+    // Check cache first
+    const cached = this.cache.get(key)
+    if (cached && Date.now() - cached.timestamp < cached.ttl) {
+      return cached.data
+    }
+    
+    // Check if request is already pending
+    const pending = this.pendingRequests.get(key)
+    if (pending) {
+      return pending
+    }
+    
+    // Make new request
+    const request = fetcher().then(data => {
+      this.cache.set(key, { data, timestamp: Date.now(), ttl })
+      this.pendingRequests.delete(key)
+      return data
+    }).catch(error => {
+      this.pendingRequests.delete(key)
+      throw error
+    })
+    
+    this.pendingRequests.set(key, request)
+    return request
+  }
+  
+  invalidate(pattern?: string) {
+    if (pattern) {
+      for (const key of this.cache.keys()) {
+        if (key.includes(pattern)) {
+          this.cache.delete(key)
+        }
+      }
+    } else {
+      this.cache.clear()
+    }
+  }
+}
+
+// Global cache instance
+const requestCache = new RequestCache()
 
 export interface TeamMember {
   id: string
@@ -113,64 +167,69 @@ export function useTeamManagement() {
     error: null
   })
   
-  // Load team members from contract
+  // Load team members from contract with caching
   const loadTeamMembers = useCallback(async () => {
     if (!payrollContract || !address) return
     
-    setState(prev => ({ ...prev, isLoading: true, error: null }))
+    const cacheKey = `team-members-${address}`
     
     try {
-      // Get employee count
-      const employeeCount = await payrollContract.read.employeeCount([address]) as bigint
-      const members: TeamMember[] = []
-      
-      // Load each employee
-      for (let i = 0; i < Number(employeeCount); i++) {
-        try {
-          const employee = await payrollContract.read.getEmployee([address, BigInt(i)]) as {
-            recipient: string
-            salary: bigint
-            paymentDate: bigint
-            active: boolean
-            totalPaid: bigint
-            lastPaidDate: bigint
-            name: string
-            email: string
+      const members = await requestCache.get(cacheKey, async () => {
+        // Get employee count
+        const employeeCount = await payrollContract.read.employeeCount([address]) as bigint
+        const membersList: TeamMember[] = []
+        
+        // Load each employee with individual error handling
+        for (let i = 0; i < Number(employeeCount); i++) {
+          try {
+            const employee = await payrollContract.read.getEmployee([address, BigInt(i)]) as {
+              recipient: string
+              salary: bigint
+              paymentDate: bigint
+              active: boolean
+              totalPaid: bigint
+              lastPaidDate: bigint
+              name: string
+              email: string
+            }
+            
+            if (employee.active) {
+              const member: TeamMember = {
+                id: `${address}_${i}`,
+                name: employee.name || `Employee ${i + 1}`,
+                walletAddress: employee.recipient,
+                email: employee.email || undefined,
+                salary: Number(formatUnits(employee.salary, 6)),
+                paymentDate: Number(employee.paymentDate),
+                status: 'verified',
+                joinDate: new Date(),
+                totalPaid: Number(formatUnits(employee.totalPaid, 6)),
+                paymentHistory: []
+              }
+              
+              // Calculate next payment date
+              const now = new Date()
+              const nextPayment = new Date(now.getFullYear(), now.getMonth(), member.paymentDate)
+              if (nextPayment <= now) {
+                nextPayment.setMonth(nextPayment.getMonth() + 1)
+              }
+              member.nextPayment = nextPayment
+              
+              // Set last paid date if available
+              if (employee.lastPaidDate > 0) {
+                member.lastPaid = new Date(Number(employee.lastPaidDate) * 1000)
+              }
+              
+              membersList.push(member)
+            }
+          } catch (error) {
+            console.error(`Error loading employee ${i}:`, error)
+            // Continue loading other employees even if one fails
           }
-          
-          if (employee.active) {
-            const member: TeamMember = {
-              id: `${address}_${i}`,
-              name: employee.name || `Employee ${i + 1}`, // Use contract name or fallback
-              walletAddress: employee.recipient,
-              email: employee.email || undefined,
-              salary: Number(formatUnits(employee.salary, 6)), // USDC has 6 decimals
-              paymentDate: Number(employee.paymentDate),
-              status: 'verified',
-              joinDate: new Date(), // Contract doesn't store join date
-              totalPaid: Number(formatUnits(employee.totalPaid, 6)), // USDC has 6 decimals
-              paymentHistory: []
-            }
-            
-            // Calculate next payment date
-            const now = new Date()
-            const nextPayment = new Date(now.getFullYear(), now.getMonth(), member.paymentDate)
-            if (nextPayment <= now) {
-              nextPayment.setMonth(nextPayment.getMonth() + 1)
-            }
-            member.nextPayment = nextPayment
-            
-            // Set last paid date if available
-            if (employee.lastPaidDate > 0) {
-              member.lastPaid = new Date(Number(employee.lastPaidDate) * 1000)
-            }
-            
-            members.push(member)
-          }
-        } catch (error) {
-          console.error(`Error loading employee ${i}:`, error)
         }
-      }
+        
+        return membersList
+      }, 30000) // 30 second cache
       
       setState(prev => ({ ...prev, members, isLoading: false }))
     } catch (error) {
@@ -183,106 +242,122 @@ export function useTeamManagement() {
     }
   }, [payrollContract, address])
   
-  // Load upcoming payrolls
+  // Load upcoming payrolls with caching
   const loadUpcomingPayrolls = useCallback(async () => {
     if (!payrollContract || !address) return
     
+    const cacheKey = `upcoming-payrolls-${address}`
+    
     try {
-      const upcomingBatches = await payrollContract.read.getUpcomingPayrolls([address]) as Array<{
-        totalAmount: bigint
-        scheduledDate: bigint
-        employeeCount: bigint
-        processed: boolean
-        failed: boolean
-        failureReason: string
-        processedAt: bigint
-      }>
-      const payrolls: PayrollBatchDetails[] = []
-      
-      for (let i = 0; i < upcomingBatches.length; i++) {
-        const batch = upcomingBatches[i]
-        payrolls.push({
-          id: `upcoming_${i}`,
-          scheduledDate: new Date(Number(batch.scheduledDate) * 1000),
-          totalAmount: Number(formatUnits(batch.totalAmount, 6)), // USDC has 6 decimals
-          employeeCount: Number(batch.employeeCount),
-          status: 'scheduled',
-          processed: false,
-          failed: false,
-          payments: []
-        })
-      }
+      const payrolls = await requestCache.get(cacheKey, async () => {
+        const upcomingBatches = await payrollContract.read.getUpcomingPayrolls([address]) as Array<{
+          totalAmount: bigint
+          scheduledDate: bigint
+          employeeCount: bigint
+          processed: boolean
+          failed: boolean
+          failureReason: string
+          processedAt: bigint
+        }>
+        
+        const payrollsList: PayrollBatchDetails[] = []
+        
+        for (let i = 0; i < upcomingBatches.length; i++) {
+          const batch = upcomingBatches[i]
+          payrollsList.push({
+            id: `upcoming_${i}`,
+            scheduledDate: new Date(Number(batch.scheduledDate) * 1000),
+            totalAmount: Number(formatUnits(batch.totalAmount, 6)),
+            employeeCount: Number(batch.employeeCount),
+            status: 'scheduled',
+            processed: false,
+            failed: false,
+            payments: []
+          })
+        }
+        
+        return payrollsList
+      }, 15000) // 15 second cache for upcoming payrolls
       
       setState(prev => ({ ...prev, upcomingPayrolls: payrolls }))
     } catch (error) {
       console.error('Error loading upcoming payrolls:', error)
+      // Don't set error state for this, as it's not critical
     }
   }, [payrollContract, address])
   
-  // Load payroll history
+  // Load payroll history with caching
   const loadPayrollHistory = useCallback(async () => {
     if (!payrollContract || !address) return
     
+    const cacheKey = `payroll-history-${address}`
+    
     try {
-      const historyBatches = await payrollContract.read.getPayrollHistory([address]) as Array<{
-        totalAmount: bigint
-        scheduledDate: bigint
-        employeeCount: bigint
-        processed: boolean
-        failed: boolean
-        failureReason: string
-        processedAt: bigint
-      }>
-      const history: PayrollBatchDetails[] = []
-      
-      for (let i = 0; i < historyBatches.length; i++) {
-        const batch = historyBatches[i]
+      const history = await requestCache.get(cacheKey, async () => {
+        const historyBatches = await payrollContract.read.getPayrollHistory([address]) as Array<{
+          totalAmount: bigint
+          scheduledDate: bigint
+          employeeCount: bigint
+          processed: boolean
+          failed: boolean
+          failureReason: string
+          processedAt: bigint
+        }>
         
-        // Load payment records for this batch
-        const payments: PaymentRecord[] = []
-        try {
-          const batchPayments = await payrollContract.read.getBatchPayments([address, BigInt(i)]) as Array<{
-            recipient: string
-            amount: bigint
-            date: bigint
-            transactionHash: string
-            successful: boolean
-            gasUsed: bigint
-          }>
+        const historyList: PayrollBatchDetails[] = []
+        
+        for (let i = 0; i < historyBatches.length; i++) {
+          const batch = historyBatches[i]
           
-          for (let j = 0; j < batchPayments.length; j++) {
-            const payment = batchPayments[j]
-            payments.push({
-              id: `${i}_${j}`,
-              amount: Number(formatUnits(payment.amount, 6)), // USDC has 6 decimals
-              date: new Date(Number(payment.date) * 1000),
-              transactionHash: payment.transactionHash,
-              status: payment.successful ? 'successful' : 'failed',
-              gasUsed: Number(payment.gasUsed),
-              processingTime: 0 // Not tracked in contract
-            })
+          // Load payment records for this batch with error handling
+          const payments: PaymentRecord[] = []
+          try {
+            const batchPayments = await payrollContract.read.getBatchPayments([address, BigInt(i)]) as Array<{
+              recipient: string
+              amount: bigint
+              date: bigint
+              transactionHash: string
+              successful: boolean
+              gasUsed: bigint
+            }>
+            
+            for (let j = 0; j < batchPayments.length; j++) {
+              const payment = batchPayments[j]
+              payments.push({
+                id: `${i}_${j}`,
+                amount: Number(formatUnits(payment.amount, 6)),
+                date: new Date(Number(payment.date) * 1000),
+                transactionHash: payment.transactionHash,
+                status: payment.successful ? 'successful' : 'failed',
+                gasUsed: Number(payment.gasUsed),
+                processingTime: 0
+              })
+            }
+          } catch (error) {
+            console.error(`Error loading payments for batch ${i}:`, error)
           }
-        } catch (error) {
-          console.error(`Error loading payments for batch ${i}:`, error)
+          
+          historyList.push({
+            id: `history_${i}`,
+            scheduledDate: new Date(Number(batch.scheduledDate) * 1000),
+            totalAmount: Number(formatUnits(batch.totalAmount, 6)),
+            employeeCount: Number(batch.employeeCount),
+            status: batch.failed ? 'failed' : 'completed',
+            processed: batch.processed,
+            failed: batch.failed,
+            failureReason: batch.failureReason || undefined,
+            processedAt: batch.processedAt > 0 ? new Date(Number(batch.processedAt) * 1000) : undefined,
+            payments
+          })
         }
         
-        history.push({
-          id: `history_${i}`,
-          scheduledDate: new Date(Number(batch.scheduledDate) * 1000),
-          totalAmount: Number(formatUnits(batch.totalAmount, 6)), // USDC has 6 decimals
-          employeeCount: Number(batch.employeeCount),
-          status: batch.failed ? 'failed' : 'completed',
-          processed: batch.processed,
-          failed: batch.failed,
-          failureReason: batch.failureReason || undefined,
-          processedAt: batch.processedAt > 0 ? new Date(Number(batch.processedAt) * 1000) : undefined,
-          payments
-        })
-      }
+        return historyList
+      }, 60000) // 60 second cache for history (changes less frequently)
       
       setState(prev => ({ ...prev, payrollHistory: history }))
     } catch (error) {
       console.error('Error loading payroll history:', error)
+      // Don't set error state for this, as it's not critical
     }
   }, [payrollContract, address])
   
@@ -304,7 +379,7 @@ export function useTeamManagement() {
     setState(prev => ({ ...prev, isLoading: true, error: null }))
     
     try {
-      const salaryInUsdc = parseUnits(memberData.salary.toString(), 6) // USDC has 6 decimals
+      const salaryInUsdc = parseUnits(memberData.salary.toString(), 6)
       
       const hash = await payrollWriteContract.write.addEmployee([
         memberData.walletAddress,
@@ -319,7 +394,8 @@ export function useTeamManagement() {
         await publicClient.waitForTransactionReceipt({ hash })
       }
       
-      // Reload team members
+      // Invalidate cache and reload team members
+      requestCache.invalidate(`team-members-${address}`)
       await loadTeamMembers()
       
       setState(prev => ({ ...prev, isLoading: false }))
@@ -366,7 +442,7 @@ export function useTeamManagement() {
         throw new Error('Payment date must be between 1 and 31')
       }
       
-      const salaryInUsdc = parseUnits(newSalary.toString(), 6) // USDC has 6 decimals
+      const salaryInUsdc = parseUnits(newSalary.toString(), 6)
       
       const hash = await payrollWriteContract.write.updateEmployee([
         BigInt(employeeId),
@@ -379,7 +455,8 @@ export function useTeamManagement() {
         await publicClient.waitForTransactionReceipt({ hash })
       }
       
-      // Reload team members
+      // Invalidate cache and reload team members
+      requestCache.invalidate(`team-members-${address}`)
       await loadTeamMembers()
       
       setState(prev => ({ ...prev, isLoading: false }))
@@ -417,7 +494,8 @@ export function useTeamManagement() {
         await publicClient.waitForTransactionReceipt({ hash })
       }
       
-      // Reload team members
+      // Invalidate cache and reload team members
+      requestCache.invalidate(`team-members-${address}`)
       await loadTeamMembers()
       
       setState(prev => ({ ...prev, isLoading: false }))
@@ -451,7 +529,8 @@ export function useTeamManagement() {
         await publicClient.waitForTransactionReceipt({ hash })
       }
       
-      // Reload upcoming payrolls
+      // Invalidate cache and reload upcoming payrolls
+      requestCache.invalidate(`upcoming-payrolls-${address}`)
       await loadUpcomingPayrolls()
       
       setState(prev => ({ ...prev, isLoading: false }))
@@ -469,20 +548,45 @@ export function useTeamManagement() {
   
   // Load all data
   const loadAllData = useCallback(async () => {
-    await Promise.all([
-      loadTeamMembers(),
-      loadUpcomingPayrolls(),
-      loadPayrollHistory()
-    ])
-  }, [loadTeamMembers, loadUpcomingPayrolls, loadPayrollHistory])
+    if (!payrollContract || !address) return
+    
+    setState(prev => ({ ...prev, isLoading: true, error: null }))
+    
+    try {
+      await Promise.all([
+        loadTeamMembers(),
+        loadUpcomingPayrolls(),
+        loadPayrollHistory()
+      ])
+    } catch (error) {
+      console.error('Error loading all data:', error)
+      setState(prev => ({ 
+        ...prev, 
+        isLoading: false, 
+        error: error instanceof Error ? error.message : 'Failed to load data'
+      }))
+    }
+  }, [payrollContract, address]) // Remove the function dependencies to break the cycle
   
   // Load data on mount and when dependencies change
   useEffect(() => {
     if (payrollContract && address) {
       loadAllData()
     }
-  }, [payrollContract, address, loadAllData])
+  }, [payrollContract, address]) // Remove loadAllData from dependencies
   
+  // Manual refresh function
+  const refreshData = useCallback(async () => {
+    if (!address) return
+    
+    // Invalidate all caches for this address
+    requestCache.invalidate(address)
+    
+    // Reload all data
+    setState(prev => ({ ...prev, isLoading: true, error: null }))
+    await loadAllData()
+  }, [address, loadAllData])
+
   return {
     ...state,
     // Actions
@@ -491,6 +595,7 @@ export function useTeamManagement() {
     removeTeamMember,
     schedulePayroll,
     loadAllData,
+    refreshData,
     // Utilities
     validateTeamMember,
     isValidWalletAddress,

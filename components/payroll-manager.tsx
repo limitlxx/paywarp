@@ -17,8 +17,9 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Users, FileUp, Send, ShieldCheck, Plus, Edit, Trash2, Calendar, DollarSign, Clock, CheckCircle, XCircle, AlertCircle, Loader2, Zap, ArrowRight } from "lucide-react"
+import { Users, FileUp, Send, ShieldCheck, Plus, Edit, Trash2, Calendar, DollarSign, Clock, CheckCircle, XCircle, AlertCircle, Loader2, Zap, ArrowRight, RefreshCw } from "lucide-react"
 import { toast } from "@/hooks/use-toast"
+import { PayrollErrorBoundary } from "@/components/error-boundary"
 
 interface PayrollFundingProps {
   totalMonthlyPayroll: number
@@ -448,7 +449,8 @@ export function PayrollManager() {
     addTeamMember,
     updateTeamMember,
     removeTeamMember,
-    schedulePayroll
+    schedulePayroll,
+    refreshData
   } = useTeamManagement()
 
   const { buckets, refetch: refetchBuckets } = useBucketBalances()
@@ -545,152 +547,188 @@ export function PayrollManager() {
   }
 
   return (
-    <div className="space-y-6">
-      {error && (
-        <Card className="glass-card border-red-500/20">
-          <CardContent className="pt-6">
-            <div className="flex items-center gap-2 text-red-400">
-              <XCircle className="w-4 h-4" />
-              <span className="text-sm">{error}</span>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <PayrollFunding
-          totalMonthlyPayroll={totalMonthlyPayroll}
-          instantBucketBalance={instantBucketBalance}
-          onFundPayroll={handleFundPayroll}
-          isLoading={isLoading}
-          buckets={buckets}
-        />
-
-        <Card className="glass-card border-green-500/20">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm flex items-center gap-2 text-green-400">
-              <ShieldCheck className="w-4 h-4" />
-              Team Stats
-            </CardTitle>
-            <CardDescription className="text-[10px]">
-              {members.length} active members • Next payout: {upcomingPayrolls[0]?.scheduledDate.toLocaleDateString() || 'Not scheduled'}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 gap-4 text-center">
-              <div>
-                <div className="text-2xl font-bold text-green-400">{members.length}</div>
-                <div className="text-xs text-muted-foreground">Active Members</div>
-              </div>
-              <div>
-                <div className="text-2xl font-bold text-purple-400">
-                  ${totalMonthlyPayroll.toLocaleString()}
+    <PayrollErrorBoundary>
+      <div className="space-y-6">
+        {error && (
+          <Card className="glass-card border-red-500/20">
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2 text-red-400">
+                  <XCircle className="w-4 h-4" />
+                  <span className="text-sm">{error}</span>
                 </div>
-                <div className="text-xs text-muted-foreground">Monthly Total</div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={refreshData}
+                  className="border-red-500/20 text-red-400 hover:bg-red-500/10"
+                >
+                  <RefreshCw className="w-3 h-3 mr-1" />
+                  Retry
+                </Button>
               </div>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Tabs defaultValue="team" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="team">Team Management</TabsTrigger>
-          <TabsTrigger value="upcoming">Upcoming Payrolls</TabsTrigger>
-          <TabsTrigger value="history">Payroll History</TabsTrigger>
-        </TabsList>
-        
-        <TabsContent value="team" className="space-y-4">
-          <Card className="glass-card border-purple-500/20">
-            <CardHeader>
-              <div className="flex justify-between items-center">
-                <CardTitle className="flex items-center gap-2">
-                  <Users className="w-5 h-5 text-purple-400" />
-                  Manage Team
-                </CardTitle>
-                <AddMemberDialog onAddMember={addTeamMember} isLoading={isLoading} />
-              </div>
-            </CardHeader>
-            <CardContent>
-              {members.length === 0 ? (
-                <div className="text-center py-8 text-muted-foreground">
-                  No team members added yet. Click "Add Member" to get started.
-                </div>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow className="border-purple-500/10 hover:bg-transparent">
-                      <TableHead className="text-purple-300">Name</TableHead>
-                      <TableHead className="text-purple-300">Address</TableHead>
-                      <TableHead className="text-purple-300">Status</TableHead>
-                      <TableHead className="text-purple-300 text-right">Salary</TableHead>
-                      <TableHead className="text-purple-300 text-right">Payment Date</TableHead>
-                      <TableHead className="text-purple-300 text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {members.map((member) => (
-                      <TableRow key={member.id} className="border-purple-500/5 hover:bg-white/5 transition-colors">
-                        <TableCell className="font-medium text-foreground">{member.name}</TableCell>
-                        <TableCell className="text-xs text-muted-foreground font-mono">
-                          {member.walletAddress
-                            ? `${member.walletAddress.slice(0, 6)}...${member.walletAddress.slice(-4)}`
-                            : member.email}
-                        </TableCell>
-                        <TableCell>
-                          <Badge
-                            variant="outline"
-                            className={
-                              member.status === "verified"
-                                ? "border-green-500/20 text-green-400"
-                                : "border-yellow-500/20 text-yellow-400"
-                            }
-                          >
-                            {member.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-right font-bold text-foreground">
-                          ${member.salary.toLocaleString()}
-                        </TableCell>
-                        <TableCell className="text-right text-muted-foreground">
-                          {member.paymentDate}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-1">
-                            <Button size="sm" variant="ghost" className="h-8 w-8 p-0">
-                              <Edit className="w-3 h-3" />
-                            </Button>
-                            <Button 
-                              size="sm" 
-                              variant="ghost" 
-                              className="h-8 w-8 p-0 text-red-400 hover:text-red-300"
-                              onClick={() => removeTeamMember(member.id)}
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
             </CardContent>
           </Card>
-        </TabsContent>
-        
-        <TabsContent value="upcoming">
-          <UpcomingPayrolls 
-            upcomingPayrolls={upcomingPayrolls}
-            onSchedulePayroll={schedulePayroll}
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <PayrollFunding
+            totalMonthlyPayroll={totalMonthlyPayroll}
+            instantBucketBalance={instantBucketBalance}
+            onFundPayroll={handleFundPayroll}
             isLoading={isLoading}
+            buckets={buckets}
           />
-        </TabsContent>
-        
-        <TabsContent value="history">
-          <PayrollHistory payrollHistory={payrollHistory} />
-        </TabsContent>
-      </Tabs>
-    </div>
+
+          <Card className="glass-card border-green-500/20">
+            <CardHeader className="pb-2">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm flex items-center gap-2 text-green-400">
+                  <ShieldCheck className="w-4 h-4" />
+                  Team Stats
+                </CardTitle>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={refreshData}
+                  disabled={isLoading}
+                  className="h-6 w-6 p-0 hover:bg-green-500/10"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isLoading ? 'animate-spin' : ''}`} />
+                </Button>
+              </div>
+              <CardDescription className="text-[10px]">
+                {members.length} active members • Next payout: {upcomingPayrolls[0]?.scheduledDate.toLocaleDateString() || 'Not scheduled'}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 gap-4 text-center">
+                <div>
+                  <div className="text-2xl font-bold text-green-400">{members.length}</div>
+                  <div className="text-xs text-muted-foreground">Active Members</div>
+                </div>
+                <div>
+                  <div className="text-2xl font-bold text-purple-400">
+                    ${totalMonthlyPayroll.toLocaleString()}
+                  </div>
+                  <div className="text-xs text-muted-foreground">Monthly Total</div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <Tabs defaultValue="team" className="w-full">
+          <TabsList className="grid w-full grid-cols-3">
+            <TabsTrigger value="team">Team Management</TabsTrigger>
+            <TabsTrigger value="upcoming">Upcoming Payrolls</TabsTrigger>
+            <TabsTrigger value="history">Payroll History</TabsTrigger>
+          </TabsList>
+          
+          <TabsContent value="team" className="space-y-4">
+            <Card className="glass-card border-purple-500/20">
+              <CardHeader>
+                <div className="flex justify-between items-center">
+                  <CardTitle className="flex items-center gap-2">
+                    <Users className="w-5 h-5 text-purple-400" />
+                    Manage Team
+                  </CardTitle>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={refreshData}
+                      disabled={isLoading}
+                      className="hover:bg-purple-500/10 text-purple-400"
+                    >
+                      <RefreshCw className={`w-3 h-3 mr-1 ${isLoading ? 'animate-spin' : ''}`} />
+                      Refresh
+                    </Button>
+                    <AddMemberDialog onAddMember={addTeamMember} isLoading={isLoading} />
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {members.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    No team members added yet. Click "Add Member" to get started.
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow className="border-purple-500/10 hover:bg-transparent">
+                        <TableHead className="text-purple-300">Name</TableHead>
+                        <TableHead className="text-purple-300">Address</TableHead>
+                        <TableHead className="text-purple-300">Status</TableHead>
+                        <TableHead className="text-purple-300 text-right">Salary</TableHead>
+                        <TableHead className="text-purple-300 text-right">Payment Date</TableHead>
+                        <TableHead className="text-purple-300 text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {members.map((member) => (
+                        <TableRow key={member.id} className="border-purple-500/5 hover:bg-white/5 transition-colors">
+                          <TableCell className="font-medium text-foreground">{member.name}</TableCell>
+                          <TableCell className="text-xs text-muted-foreground font-mono">
+                            {member.walletAddress
+                              ? `${member.walletAddress.slice(0, 6)}...${member.walletAddress.slice(-4)}`
+                              : member.email}
+                          </TableCell>
+                          <TableCell>
+                            <Badge
+                              variant="outline"
+                              className={
+                                member.status === "verified"
+                                  ? "border-green-500/20 text-green-400"
+                                  : "border-yellow-500/20 text-yellow-400"
+                              }
+                            >
+                              {member.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right font-bold text-foreground">
+                            ${member.salary.toLocaleString()}
+                          </TableCell>
+                          <TableCell className="text-right text-muted-foreground">
+                            {member.paymentDate}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-1">
+                              <Button size="sm" variant="ghost" className="h-8 w-8 p-0">
+                                <Edit className="w-3 h-3" />
+                              </Button>
+                              <Button 
+                                size="sm" 
+                                variant="ghost" 
+                                className="h-8 w-8 p-0 text-red-400 hover:text-red-300"
+                                onClick={() => removeTeamMember(member.id)}
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+          
+          <TabsContent value="upcoming">
+            <UpcomingPayrolls 
+              upcomingPayrolls={upcomingPayrolls}
+              onSchedulePayroll={schedulePayroll}
+              isLoading={isLoading}
+            />
+          </TabsContent>
+          
+          <TabsContent value="history">
+            <PayrollHistory payrollHistory={payrollHistory} />
+          </TabsContent>
+        </Tabs>
+      </div>
+    </PayrollErrorBoundary>
   )
 }
