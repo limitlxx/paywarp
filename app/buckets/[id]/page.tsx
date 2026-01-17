@@ -41,15 +41,18 @@ import { DepositModal } from "@/components/modals/deposit-modal"
 import { WithdrawModal } from "@/components/modals/withdraw-modal"
 import { TransferModal } from "@/components/modals/transfer-modal"
 import { NetworkGuard } from "@/components/network-guard"
+import { AuthGuard } from "@/components/auth-guard"
 import { useBucketBalances } from "@/hooks/use-bucket-balances"
 import { useTransactionHistory } from "@/hooks/use-transaction-history"
 import { useWallet } from "@/hooks/use-wallet"
+import { useUserRegistration } from "@/lib/user-registration"
 import { useToast } from "@/hooks/use-toast"
 import { useContract, useContractWrite } from "@/lib/contracts"
 import { useNetwork } from "@/hooks/use-network"
 import { parseUnits } from "viem"
 import { usePublicClient } from "wagmi"
 import { DashboardHeader } from "@/components/dashboard-header"
+import { useEffect } from "react"
 
 type BucketType = 'billings' | 'savings' | 'growth' | 'instant' | 'spendable'
 
@@ -118,10 +121,13 @@ export default function BucketDetails() {
   const id = params.id as string
   const bucket = bucketConfig[id as keyof typeof bucketConfig] || bucketConfig.billings
   
+  // Authentication hooks
+  const { isConnected, connect, address } = useWallet()
+  const { isRegistered } = useUserRegistration()
+  
   // Hooks for real contract data
   const { buckets, isLoading: bucketsLoading, refetch } = useBucketBalances()
   const { transactions, isLoading: transactionsLoading } = useTransactionHistory()
-  const { isConnected, connect } = useWallet()
   const { toast } = useToast()
   const { currentNetwork } = useNetwork()
   const bucketVaultWriteContract = useContractWrite('bucketVault', currentNetwork)
@@ -135,6 +141,22 @@ export default function BucketDetails() {
   const [transferToId, setTransferToId] = useState<BucketType>("savings")
   const [transferAmount, setTransferAmount] = useState("")
   const [isTransferring, setIsTransferring] = useState(false)
+
+  // Auth protection - redirect if not connected after initial load
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (!isConnected) {
+        toast({
+          title: "Authentication Required",
+          description: "Please connect your wallet to access bucket details.",
+          variant: "destructive",
+        })
+        router.push('/dashboard')
+      }
+    }, 2000) // Give 2 seconds for wallet to connect
+
+    return () => clearTimeout(timer)
+  }, [isConnected, router, toast])
 
   // Get real bucket data from contract
   const realBucketData = useMemo(() => {
@@ -282,6 +304,48 @@ export default function BucketDetails() {
 
   if (!bucket) return null
 
+  // Show connection prompt if not connected
+  if (!isConnected) {
+    return (
+      <NetworkGuard>
+        <div className="min-h-screen gradient-bg pb-24">
+          <DashboardHeader />
+          <main className="p-4 sm:p-6 lg:p-8">
+            <div className="max-w-2xl mx-auto">
+              <Card className="glass-card border-purple-500/20 text-center">
+                <CardHeader>
+                  <div className="mx-auto w-16 h-16 rounded-full bg-purple-500/10 flex items-center justify-center mb-4">
+                    <Wallet className="w-8 h-8 text-purple-400" />
+                  </div>
+                  <CardTitle className="text-2xl">Connect Your Wallet</CardTitle>
+                  <CardDescription>
+                    You need to connect your wallet to access bucket details and perform transactions.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <Button
+                    onClick={connect}
+                    className="gradient-primary text-white h-12 px-8 font-bold"
+                  >
+                    Connect Wallet
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => router.push('/dashboard')}
+                    className="glass border-purple-500/20 bg-transparent"
+                  >
+                    Back to Dashboard
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
+          </main>
+          <BottomNav />
+        </div>
+      </NetworkGuard>
+    )
+  }
+
   return (
     <NetworkGuard>
       <div className="min-h-screen gradient-bg pb-24">
@@ -325,14 +389,34 @@ export default function BucketDetails() {
               </div>
               <div className="flex flex-col gap-2">
                 <Button
-                  onClick={() => setIsDepositOpen(true)}
+                  onClick={() => {
+                    if (!isConnected) {
+                      toast({
+                        title: "Connect Wallet",
+                        description: "Please connect your wallet to deposit funds.",
+                        variant: "destructive",
+                      })
+                      return
+                    }
+                    setIsDepositOpen(true)
+                  }}
                   className="gradient-primary text-white h-9 px-4 font-bold text-xs gap-1"
                 >
                   <ArrowDownLeft className="w-3.5 h-3.5" />
                   Deposit
                 </Button>
                 <Button
-                  onClick={() => setIsWithdrawOpen(true)}
+                  onClick={() => {
+                    if (!isConnected) {
+                      toast({
+                        title: "Connect Wallet", 
+                        description: "Please connect your wallet to withdraw funds.",
+                        variant: "destructive",
+                      })
+                      return
+                    }
+                    setIsWithdrawOpen(true)
+                  }}
                   variant="outline"
                   className="glass border-indigo-500/30 text-indigo-300 h-9 px-4 font-bold text-xs gap-1"
                 >
@@ -539,7 +623,17 @@ export default function BucketDetails() {
                   <CardContent className="space-y-4">
                     <Button
                       className="w-full gradient-primary text-white h-12 text-lg font-bold gap-2"
-                      onClick={() => setIsDepositOpen(true)}
+                      onClick={() => {
+                        if (!isConnected) {
+                          toast({
+                            title: "Connect Wallet",
+                            description: "Please connect your wallet to deposit funds.",
+                            variant: "destructive",
+                          })
+                          return
+                        }
+                        setIsDepositOpen(true)
+                      }}
                     >
                       Open Deposit Portal
                     </Button>
@@ -564,7 +658,17 @@ export default function BucketDetails() {
                     <Button
                       variant="outline"
                       className="w-full glass border-indigo-500/30 hover:bg-indigo-500/10 text-foreground h-12 text-lg font-bold gap-2 bg-transparent"
-                      onClick={() => setIsWithdrawOpen(true)}
+                      onClick={() => {
+                        if (!isConnected) {
+                          toast({
+                            title: "Connect Wallet",
+                            description: "Please connect your wallet to withdraw funds.",
+                            variant: "destructive",
+                          })
+                          return
+                        }
+                        setIsWithdrawOpen(true)
+                      }}
                     >
                       Initiate Withdrawal
                     </Button>

@@ -1,940 +1,1513 @@
 [
-  { "inputs": [], "stateMutability": "nonpayable", "type": "constructor" },
   {
-    "inputs": [
-      { "internalType": "address", "name": "target", "type": "address" }
-    ],
-    "name": "AddressEmptyCode",
-    "type": "error"
-  },
-  {
-    "inputs": [
-      { "internalType": "address", "name": "implementation", "type": "address" }
-    ],
-    "name": "ERC1967InvalidImplementation",
-    "type": "error"
-  },
-  { "inputs": [], "name": "ERC1967NonPayable", "type": "error" },
-  { "inputs": [], "name": "EnforcedPause", "type": "error" },
-  { "inputs": [], "name": "ExpectedPause", "type": "error" },
-  { "inputs": [], "name": "FailedCall", "type": "error" },
-  { "inputs": [], "name": "InvalidInitialization", "type": "error" },
-  { "inputs": [], "name": "NotInitializing", "type": "error" },
-  {
-    "inputs": [
-      { "internalType": "address", "name": "owner", "type": "address" }
-    ],
-    "name": "OwnableInvalidOwner",
-    "type": "error"
-  },
-  {
-    "inputs": [
-      { "internalType": "address", "name": "account", "type": "address" }
-    ],
-    "name": "OwnableUnauthorizedAccount",
-    "type": "error"
-  },
-  { "inputs": [], "name": "ReentrancyGuardReentrantCall", "type": "error" },
-  {
-    "inputs": [
-      { "internalType": "address", "name": "token", "type": "address" }
-    ],
-    "name": "SafeERC20FailedOperation",
-    "type": "error"
-  },
-  { "inputs": [], "name": "UUPSUnauthorizedCallContext", "type": "error" },
-  {
-    "inputs": [
-      { "internalType": "bytes32", "name": "slot", "type": "bytes32" }
-    ],
-    "name": "UUPSUnsupportedProxiableUUID",
-    "type": "error"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "employer",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "timestamp",
-        "type": "uint256"
-      }
-    ],
-    "name": "EmergencyPauseRequested",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "employer",
-        "type": "address"
-      },
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "employee",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "salary",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "paymentDate",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "string",
-        "name": "name",
-        "type": "string"
-      }
-    ],
-    "name": "EmployeeAdded",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "employer",
-        "type": "address"
-      },
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "employee",
-        "type": "address"
-      }
-    ],
-    "name": "EmployeeRemoved",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "employer",
-        "type": "address"
-      },
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "employee",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "newSalary",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "newPaymentDate",
-        "type": "uint256"
-      }
-    ],
-    "name": "EmployeeUpdated",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": false,
-        "internalType": "uint64",
-        "name": "version",
-        "type": "uint64"
-      }
-    ],
-    "name": "Initialized",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "keeper",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "bool",
-        "name": "authorized",
-        "type": "bool"
-      }
-    ],
-    "name": "KeeperAuthorized",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "previousOwner",
-        "type": "address"
-      },
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "newOwner",
-        "type": "address"
-      }
-    ],
-    "name": "OwnershipTransferred",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "account",
-        "type": "address"
-      }
-    ],
-    "name": "Paused",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "employer",
-        "type": "address"
-      },
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "recipient",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "amount",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "bool",
-        "name": "successful",
-        "type": "bool"
-      },
-      {
-        "indexed": false,
-        "internalType": "string",
-        "name": "failureReason",
-        "type": "string"
-      }
-    ],
-    "name": "PaymentExecuted",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "uint256",
-        "name": "batchId",
-        "type": "uint256"
-      },
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "employer",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "totalAmount",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "employeeCount",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "bool",
-        "name": "successful",
-        "type": "bool"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "gasUsed",
-        "type": "uint256"
-      }
-    ],
-    "name": "PayrollProcessed",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "employer",
-        "type": "address"
-      },
-      {
-        "indexed": true,
-        "internalType": "uint256",
-        "name": "batchId",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "scheduledDate",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "totalAmount",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "employeeCount",
-        "type": "uint256"
-      }
-    ],
-    "name": "PayrollScheduled",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "employer",
-        "type": "address"
-      },
-      {
-        "indexed": false,
-        "internalType": "bool",
-        "name": "trusted",
-        "type": "bool"
-      }
-    ],
-    "name": "TrustedEmployerSet",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": false,
-        "internalType": "address",
-        "name": "account",
-        "type": "address"
-      }
-    ],
-    "name": "Unpaused",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "implementation",
-        "type": "address"
-      }
-    ],
-    "name": "Upgraded",
-    "type": "event"
-  },
-  {
+    "type": "constructor",
     "inputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "MAX_EMPLOYEES_PER_BATCH",
-    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
-    "stateMutability": "view",
-    "type": "function"
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
-    "inputs": [],
+    "type": "function",
     "name": "MAX_SALARY",
-    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
-    "stateMutability": "view",
-    "type": "function"
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
-    "inputs": [],
+    "type": "function",
     "name": "MIN_SALARY",
-    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
-    "stateMutability": "view",
-    "type": "function"
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
-    "inputs": [],
+    "type": "function",
     "name": "UPGRADE_INTERFACE_VERSION",
-    "outputs": [{ "internalType": "string", "name": "", "type": "string" }],
-    "stateMutability": "view",
-    "type": "function"
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
-    "inputs": [
-      { "internalType": "address", "name": "recipient", "type": "address" },
-      { "internalType": "uint256", "name": "salary", "type": "uint256" },
-      { "internalType": "uint256", "name": "paymentDate", "type": "uint256" },
-      { "internalType": "string", "name": "name", "type": "string" },
-      { "internalType": "string", "name": "email", "type": "string" }
-    ],
+    "type": "function",
     "name": "addEmployee",
+    "inputs": [
+      {
+        "name": "recipient",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "salary",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "paymentDate",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "name",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "email",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
     "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
+    "stateMutability": "nonpayable"
   },
   {
-    "inputs": [{ "internalType": "address", "name": "", "type": "address" }],
+    "type": "function",
     "name": "authorizedKeepers",
-    "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
-    "stateMutability": "view",
-    "type": "function"
+    "inputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
-    "inputs": [],
+    "type": "function",
     "name": "automationRegistry",
-    "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
-    "stateMutability": "view",
-    "type": "function"
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
-    "inputs": [{ "internalType": "address", "name": "", "type": "address" }],
+    "type": "function",
     "name": "batchCount",
-    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
-    "stateMutability": "view",
-    "type": "function"
+    "inputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
-    "inputs": [
-      { "internalType": "address", "name": "", "type": "address" },
-      { "internalType": "uint256", "name": "", "type": "uint256" },
-      { "internalType": "uint256", "name": "", "type": "uint256" }
-    ],
+    "type": "function",
     "name": "batchPayments",
-    "outputs": [
-      { "internalType": "address", "name": "recipient", "type": "address" },
-      { "internalType": "uint256", "name": "amount", "type": "uint256" },
-      { "internalType": "uint256", "name": "date", "type": "uint256" },
+    "inputs": [
       {
-        "internalType": "bytes32",
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "recipient",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "date",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
         "name": "transactionHash",
-        "type": "bytes32"
+        "type": "bytes32",
+        "internalType": "bytes32"
       },
-      { "internalType": "bool", "name": "successful", "type": "bool" },
-      { "internalType": "uint256", "name": "gasUsed", "type": "uint256" },
-      { "internalType": "string", "name": "failureReason", "type": "string" }
+      {
+        "name": "successful",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "gasUsed",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "failureReason",
+        "type": "string",
+        "internalType": "string"
+      }
     ],
-    "stateMutability": "view",
-    "type": "function"
+    "stateMutability": "view"
   },
   {
-    "inputs": [],
+    "type": "function",
     "name": "bucketVault",
-    "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
     "inputs": [],
-    "name": "emergencyPauseDelay",
-    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [{ "internalType": "address", "name": "", "type": "address" }],
-    "name": "emergencyPauseRequests",
-    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      { "internalType": "uint256", "name": "amount", "type": "uint256" }
-    ],
-    "name": "emergencyWithdraw",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [{ "internalType": "address", "name": "", "type": "address" }],
-    "name": "employeeCount",
-    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      { "internalType": "address", "name": "", "type": "address" },
-      { "internalType": "uint256", "name": "", "type": "uint256" }
-    ],
-    "name": "employeeEntries",
-    "outputs": [
-      { "internalType": "address", "name": "recipient", "type": "address" },
-      { "internalType": "uint256", "name": "salary", "type": "uint256" },
-      { "internalType": "uint256", "name": "paymentDate", "type": "uint256" },
-      { "internalType": "bool", "name": "active", "type": "bool" },
-      { "internalType": "uint256", "name": "totalPaid", "type": "uint256" },
-      { "internalType": "uint256", "name": "lastPaidDate", "type": "uint256" },
-      { "internalType": "string", "name": "name", "type": "string" },
-      { "internalType": "string", "name": "email", "type": "string" }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [{ "internalType": "address", "name": "", "type": "address" }],
-    "name": "employerNonces",
-    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "executeEmergencyPause",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "feeRecipient",
-    "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      { "internalType": "address", "name": "employer", "type": "address" },
-      { "internalType": "uint256", "name": "batchId", "type": "uint256" }
-    ],
-    "name": "getBatchPayments",
     "outputs": [
       {
-        "components": [
-          { "internalType": "address", "name": "recipient", "type": "address" },
-          { "internalType": "uint256", "name": "amount", "type": "uint256" },
-          { "internalType": "uint256", "name": "date", "type": "uint256" },
-          {
-            "internalType": "bytes32",
-            "name": "transactionHash",
-            "type": "bytes32"
-          },
-          { "internalType": "bool", "name": "successful", "type": "bool" },
-          { "internalType": "uint256", "name": "gasUsed", "type": "uint256" },
-          {
-            "internalType": "string",
-            "name": "failureReason",
-            "type": "string"
-          }
-        ],
-        "internalType": "struct PayrollEngineUpgradeable.PaymentRecord[]",
-        "name": "payments",
-        "type": "tuple[]"
+        "name": "",
+        "type": "address",
+        "internalType": "address"
       }
     ],
-    "stateMutability": "view",
-    "type": "function"
+    "stateMutability": "view"
   },
   {
+    "type": "function",
+    "name": "checkUpkeep",
     "inputs": [
-      { "internalType": "address", "name": "employer", "type": "address" },
-      { "internalType": "uint256", "name": "employeeId", "type": "uint256" }
-    ],
-    "name": "getEmployee",
-    "outputs": [
       {
-        "components": [
-          { "internalType": "address", "name": "recipient", "type": "address" },
-          { "internalType": "uint256", "name": "salary", "type": "uint256" },
-          {
-            "internalType": "uint256",
-            "name": "paymentDate",
-            "type": "uint256"
-          },
-          { "internalType": "bool", "name": "active", "type": "bool" },
-          { "internalType": "uint256", "name": "totalPaid", "type": "uint256" },
-          {
-            "internalType": "uint256",
-            "name": "lastPaidDate",
-            "type": "uint256"
-          },
-          { "internalType": "string", "name": "name", "type": "string" },
-          { "internalType": "string", "name": "email", "type": "string" }
-        ],
-        "internalType": "struct PayrollEngineUpgradeable.PayrollEntry",
-        "name": "employee",
-        "type": "tuple"
+        "name": "checkData",
+        "type": "bytes",
+        "internalType": "bytes"
       }
     ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      { "internalType": "address", "name": "employer", "type": "address" }
-    ],
-    "name": "getPayrollHistory",
     "outputs": [
       {
-        "components": [
-          {
-            "internalType": "uint256",
-            "name": "totalAmount",
-            "type": "uint256"
-          },
-          {
-            "internalType": "uint256",
-            "name": "scheduledDate",
-            "type": "uint256"
-          },
-          {
-            "internalType": "uint256",
-            "name": "employeeCount",
-            "type": "uint256"
-          },
-          { "internalType": "bool", "name": "processed", "type": "bool" },
-          { "internalType": "bool", "name": "failed", "type": "bool" },
-          {
-            "internalType": "string",
-            "name": "failureReason",
-            "type": "string"
-          },
-          {
-            "internalType": "uint256",
-            "name": "processedAt",
-            "type": "uint256"
-          },
-          { "internalType": "uint256", "name": "gasUsed", "type": "uint256" }
-        ],
-        "internalType": "struct PayrollEngineUpgradeable.PayrollBatch[]",
-        "name": "batches",
-        "type": "tuple[]"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      { "internalType": "address", "name": "employer", "type": "address" }
-    ],
-    "name": "getUpcomingPayrolls",
-    "outputs": [
-      {
-        "components": [
-          {
-            "internalType": "uint256",
-            "name": "totalAmount",
-            "type": "uint256"
-          },
-          {
-            "internalType": "uint256",
-            "name": "scheduledDate",
-            "type": "uint256"
-          },
-          {
-            "internalType": "uint256",
-            "name": "employeeCount",
-            "type": "uint256"
-          },
-          { "internalType": "bool", "name": "processed", "type": "bool" },
-          { "internalType": "bool", "name": "failed", "type": "bool" },
-          {
-            "internalType": "string",
-            "name": "failureReason",
-            "type": "string"
-          },
-          {
-            "internalType": "uint256",
-            "name": "processedAt",
-            "type": "uint256"
-          },
-          { "internalType": "uint256", "name": "gasUsed", "type": "uint256" }
-        ],
-        "internalType": "struct PayrollEngineUpgradeable.PayrollBatch[]",
-        "name": "batches",
-        "type": "tuple[]"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      { "internalType": "address", "name": "_paymentToken", "type": "address" },
-      { "internalType": "address", "name": "_bucketVault", "type": "address" },
-      { "internalType": "address", "name": "_owner", "type": "address" }
-    ],
-    "name": "initialize",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [{ "internalType": "address", "name": "", "type": "address" }],
-    "name": "maxBatchSize",
-    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "maxGasPerPayment",
-    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "owner",
-    "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "pause",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "paused",
-    "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "paymentToken",
-    "outputs": [
-      { "internalType": "contract IERC20", "name": "", "type": "address" }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      { "internalType": "address", "name": "", "type": "address" },
-      { "internalType": "uint256", "name": "", "type": "uint256" }
-    ],
-    "name": "payrollBatches",
-    "outputs": [
-      { "internalType": "uint256", "name": "totalAmount", "type": "uint256" },
-      { "internalType": "uint256", "name": "scheduledDate", "type": "uint256" },
-      { "internalType": "uint256", "name": "employeeCount", "type": "uint256" },
-      { "internalType": "bool", "name": "processed", "type": "bool" },
-      { "internalType": "bool", "name": "failed", "type": "bool" },
-      { "internalType": "string", "name": "failureReason", "type": "string" },
-      { "internalType": "uint256", "name": "processedAt", "type": "uint256" },
-      { "internalType": "uint256", "name": "gasUsed", "type": "uint256" }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      { "internalType": "address", "name": "employer", "type": "address" },
-      { "internalType": "uint256", "name": "batchId", "type": "uint256" }
-    ],
-    "name": "processPayroll",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "protocolFee",
-    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "proxiableUUID",
-    "outputs": [{ "internalType": "bytes32", "name": "", "type": "bytes32" }],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      { "internalType": "uint256", "name": "employeeId", "type": "uint256" }
-    ],
-    "name": "removeEmployee",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "renounceOwnership",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "requestEmergencyPause",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      { "internalType": "uint256", "name": "scheduledDate", "type": "uint256" }
-    ],
-    "name": "schedulePayroll",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      { "internalType": "address", "name": "keeper", "type": "address" },
-      { "internalType": "bool", "name": "authorized", "type": "bool" }
-    ],
-    "name": "setAuthorizedKeeper",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "_automationRegistry",
-        "type": "address"
-      }
-    ],
-    "name": "setAutomationRegistry",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      { "internalType": "uint256", "name": "_maxGas", "type": "uint256" }
-    ],
-    "name": "setMaxGasPerPayment",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      { "internalType": "uint256", "name": "_protocolFee", "type": "uint256" }
-    ],
-    "name": "setProtocolFee",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      { "internalType": "address", "name": "employer", "type": "address" },
-      { "internalType": "bool", "name": "trusted", "type": "bool" }
-    ],
-    "name": "setTrustedEmployer",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      { "internalType": "address", "name": "newOwner", "type": "address" }
-    ],
-    "name": "transferOwnership",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [{ "internalType": "address", "name": "", "type": "address" }],
-    "name": "trustedEmployers",
-    "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [],
-    "name": "unpause",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      { "internalType": "uint256", "name": "employeeId", "type": "uint256" },
-      { "internalType": "uint256", "name": "newSalary", "type": "uint256" },
-      { "internalType": "uint256", "name": "newPaymentDate", "type": "uint256" }
-    ],
-    "name": "updateEmployee",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "newImplementation",
-        "type": "address"
+        "name": "upkeepNeeded",
+        "type": "bool",
+        "internalType": "bool"
       },
-      { "internalType": "bytes", "name": "data", "type": "bytes" }
+      {
+        "name": "performData",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
     ],
-    "name": "upgradeToAndCall",
-    "outputs": [],
-    "stateMutability": "payable",
-    "type": "function"
+    "stateMutability": "view"
   },
   {
+    "type": "function",
+    "name": "emergencyPauseDelay",
     "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "emergencyPauseRequests",
+    "inputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "emergencyWithdraw",
+    "inputs": [
+      {
+        "name": "amount",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "employeeCount",
+    "inputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "employeeEntries",
+    "inputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "recipient",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "salary",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "paymentDate",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "active",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "totalPaid",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "lastPaidDate",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "name",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "email",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "employerNonces",
+    "inputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "executeEmergencyPause",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "feeRecipient",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getBatchPayments",
+    "inputs": [
+      {
+        "name": "employer",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "batchId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "payments",
+        "type": "tuple[]",
+        "internalType": "struct PayrollEngineUpgradeable.PaymentRecord[]",
+        "components": [
+          {
+            "name": "recipient",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "amount",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "date",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "transactionHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "successful",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "gasUsed",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "failureReason",
+            "type": "string",
+            "internalType": "string"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getEmployee",
+    "inputs": [
+      {
+        "name": "employer",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "employeeId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "employee",
+        "type": "tuple",
+        "internalType": "struct PayrollEngineUpgradeable.PayrollEntry",
+        "components": [
+          {
+            "name": "recipient",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "salary",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "paymentDate",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "active",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "totalPaid",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "lastPaidDate",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "name",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "email",
+            "type": "string",
+            "internalType": "string"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getPayrollHistory",
+    "inputs": [
+      {
+        "name": "employer",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "batches",
+        "type": "tuple[]",
+        "internalType": "struct PayrollEngineUpgradeable.PayrollBatch[]",
+        "components": [
+          {
+            "name": "totalAmount",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "scheduledDate",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "employeeCount",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "processed",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "failed",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "failureReason",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "processedAt",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "gasUsed",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getUpcomingPayrolls",
+    "inputs": [
+      {
+        "name": "employer",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "batches",
+        "type": "tuple[]",
+        "internalType": "struct PayrollEngineUpgradeable.PayrollBatch[]",
+        "components": [
+          {
+            "name": "totalAmount",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "scheduledDate",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "employeeCount",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "processed",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "failed",
+            "type": "bool",
+            "internalType": "bool"
+          },
+          {
+            "name": "failureReason",
+            "type": "string",
+            "internalType": "string"
+          },
+          {
+            "name": "processedAt",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "gasUsed",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "initialize",
+    "inputs": [
+      {
+        "name": "_paymentToken",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_bucketVault",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "_owner",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "maxBatchSize",
+    "inputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "maxGasPerPayment",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "owner",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "pause",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "paused",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "paymentToken",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "contract IERC20"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "payrollBatches",
+    "inputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "totalAmount",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "scheduledDate",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "employeeCount",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "processed",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "failed",
+        "type": "bool",
+        "internalType": "bool"
+      },
+      {
+        "name": "failureReason",
+        "type": "string",
+        "internalType": "string"
+      },
+      {
+        "name": "processedAt",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "gasUsed",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "performUpkeep",
+    "inputs": [
+      {
+        "name": "performData",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "processPayroll",
+    "inputs": [
+      {
+        "name": "employer",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "batchId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "protocolFee",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "proxiableUUID",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "removeEmployee",
+    "inputs": [
+      {
+        "name": "employeeId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "renounceOwnership",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "requestEmergencyPause",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "schedulePayroll",
+    "inputs": [
+      {
+        "name": "scheduledDate",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setAuthorizedKeeper",
+    "inputs": [
+      {
+        "name": "keeper",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "authorized",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setAutomationRegistry",
+    "inputs": [
+      {
+        "name": "_automationRegistry",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setMaxGasPerPayment",
+    "inputs": [
+      {
+        "name": "_maxGas",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setProtocolFee",
+    "inputs": [
+      {
+        "name": "_protocolFee",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setTrustedEmployer",
+    "inputs": [
+      {
+        "name": "employer",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "trusted",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "transferOwnership",
+    "inputs": [
+      {
+        "name": "newOwner",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "trustedEmployers",
+    "inputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "unpause",
+    "inputs": [],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "updateEmployee",
+    "inputs": [
+      {
+        "name": "employeeId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "newSalary",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "newPaymentDate",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "upgradeToAndCall",
+    "inputs": [
+      {
+        "name": "newImplementation",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "data",
+        "type": "bytes",
+        "internalType": "bytes"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
     "name": "version",
-    "outputs": [{ "internalType": "string", "name": "", "type": "string" }],
-    "stateMutability": "pure",
-    "type": "function"
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "string",
+        "internalType": "string"
+      }
+    ],
+    "stateMutability": "pure"
+  },
+  {
+    "type": "event",
+    "name": "EmergencyPauseRequested",
+    "inputs": [
+      {
+        "name": "employer",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "timestamp",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "EmployeeAdded",
+    "inputs": [
+      {
+        "name": "employer",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "employee",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "salary",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "paymentDate",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "name",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "EmployeeRemoved",
+    "inputs": [
+      {
+        "name": "employer",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "employee",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "EmployeeUpdated",
+    "inputs": [
+      {
+        "name": "employer",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "employee",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "newSalary",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "newPaymentDate",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Initialized",
+    "inputs": [
+      {
+        "name": "version",
+        "type": "uint64",
+        "indexed": false,
+        "internalType": "uint64"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "KeeperAuthorized",
+    "inputs": [
+      {
+        "name": "keeper",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "authorized",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "OwnershipTransferred",
+    "inputs": [
+      {
+        "name": "previousOwner",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "newOwner",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Paused",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "PaymentExecuted",
+    "inputs": [
+      {
+        "name": "employer",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "recipient",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "successful",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      },
+      {
+        "name": "failureReason",
+        "type": "string",
+        "indexed": false,
+        "internalType": "string"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "PayrollProcessed",
+    "inputs": [
+      {
+        "name": "batchId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "employer",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "totalAmount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "employeeCount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "successful",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      },
+      {
+        "name": "gasUsed",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "PayrollScheduled",
+    "inputs": [
+      {
+        "name": "employer",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "batchId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "scheduledDate",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "totalAmount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "employeeCount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "TrustedEmployerSet",
+    "inputs": [
+      {
+        "name": "employer",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "trusted",
+        "type": "bool",
+        "indexed": false,
+        "internalType": "bool"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Unpaused",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Upgraded",
+    "inputs": [
+      {
+        "name": "implementation",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "error",
+    "name": "AddressEmptyCode",
+    "inputs": [
+      {
+        "name": "target",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ERC1967InvalidImplementation",
+    "inputs": [
+      {
+        "name": "implementation",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ERC1967NonPayable",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "EnforcedPause",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "ExpectedPause",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "FailedCall",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "InvalidInitialization",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "NotInitializing",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "OwnableInvalidOwner",
+    "inputs": [
+      {
+        "name": "owner",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "OwnableUnauthorizedAccount",
+    "inputs": [
+      {
+        "name": "account",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "ReentrancyGuardReentrantCall",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "SafeERC20FailedOperation",
+    "inputs": [
+      {
+        "name": "token",
+        "type": "address",
+        "internalType": "address"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "UUPSUnauthorizedCallContext",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "UUPSUnsupportedProxiableUUID",
+    "inputs": [
+      {
+        "name": "slot",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
   }
 ]

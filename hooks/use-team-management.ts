@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useAccount, usePublicClient, useWalletClient } from 'wagmi'
-import { parseEther, formatEther, isAddress } from 'viem'
+import { parseUnits, formatUnits, isAddress } from 'viem'
 import { useContract, useContractWrite } from '@/lib/contracts'
 import { useNetwork } from './use-network'
 import type { PayrollEntry, PayrollBatch } from '@/lib/types'
@@ -134,18 +134,21 @@ export function useTeamManagement() {
             active: boolean
             totalPaid: bigint
             lastPaidDate: bigint
+            name: string
+            email: string
           }
           
           if (employee.active) {
             const member: TeamMember = {
               id: `${address}_${i}`,
-              name: `Employee ${i + 1}`, // Contract doesn't store names, use placeholder
+              name: employee.name || `Employee ${i + 1}`, // Use contract name or fallback
               walletAddress: employee.recipient,
-              salary: Number(formatEther(employee.salary)),
+              email: employee.email || undefined,
+              salary: Number(formatUnits(employee.salary, 6)), // USDC has 6 decimals
               paymentDate: Number(employee.paymentDate),
               status: 'verified',
               joinDate: new Date(), // Contract doesn't store join date
-              totalPaid: Number(formatEther(employee.totalPaid)),
+              totalPaid: Number(formatUnits(employee.totalPaid, 6)), // USDC has 6 decimals
               paymentHistory: []
             }
             
@@ -201,7 +204,7 @@ export function useTeamManagement() {
         payrolls.push({
           id: `upcoming_${i}`,
           scheduledDate: new Date(Number(batch.scheduledDate) * 1000),
-          totalAmount: Number(formatEther(batch.totalAmount)),
+          totalAmount: Number(formatUnits(batch.totalAmount, 6)), // USDC has 6 decimals
           employeeCount: Number(batch.employeeCount),
           status: 'scheduled',
           processed: false,
@@ -251,7 +254,7 @@ export function useTeamManagement() {
             const payment = batchPayments[j]
             payments.push({
               id: `${i}_${j}`,
-              amount: Number(formatEther(payment.amount)),
+              amount: Number(formatUnits(payment.amount, 6)), // USDC has 6 decimals
               date: new Date(Number(payment.date) * 1000),
               transactionHash: payment.transactionHash,
               status: payment.successful ? 'successful' : 'failed',
@@ -266,7 +269,7 @@ export function useTeamManagement() {
         history.push({
           id: `history_${i}`,
           scheduledDate: new Date(Number(batch.scheduledDate) * 1000),
-          totalAmount: Number(formatEther(batch.totalAmount)),
+          totalAmount: Number(formatUnits(batch.totalAmount, 6)), // USDC has 6 decimals
           employeeCount: Number(batch.employeeCount),
           status: batch.failed ? 'failed' : 'completed',
           processed: batch.processed,
@@ -301,12 +304,14 @@ export function useTeamManagement() {
     setState(prev => ({ ...prev, isLoading: true, error: null }))
     
     try {
-      const salaryWei = parseEther(memberData.salary.toString())
+      const salaryInUsdc = parseUnits(memberData.salary.toString(), 6) // USDC has 6 decimals
       
       const hash = await payrollWriteContract.write.addEmployee([
         memberData.walletAddress,
-        salaryWei,
-        BigInt(memberData.paymentDate)
+        salaryInUsdc,
+        BigInt(memberData.paymentDate),
+        memberData.name,
+        memberData.email || ""
       ])
       
       // Wait for transaction confirmation
@@ -361,11 +366,11 @@ export function useTeamManagement() {
         throw new Error('Payment date must be between 1 and 31')
       }
       
-      const salaryWei = parseEther(newSalary.toString())
+      const salaryInUsdc = parseUnits(newSalary.toString(), 6) // USDC has 6 decimals
       
       const hash = await payrollWriteContract.write.updateEmployee([
         BigInt(employeeId),
-        salaryWei,
+        salaryInUsdc,
         BigInt(newPaymentDate)
       ])
       

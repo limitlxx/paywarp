@@ -617,6 +617,60 @@ contract PayrollEngineUpgradeable is
     }
 
     /**
+     * @dev Chainlink Automation checkUpkeep function
+     * @param checkData Encoded data (not used in this implementation)
+     * @return upkeepNeeded True if upkeep is needed
+     * @return performData Encoded data for performUpkeep
+     */
+    function checkUpkeep(bytes calldata checkData) 
+        external 
+        view 
+        returns (bool upkeepNeeded, bytes memory performData) 
+    {
+        checkData; // Silence unused parameter warning
+        
+        // Look for ready payroll batches across all employers
+        address[] memory employers = new address[](100); // Max 100 employers to check
+        uint256[] memory batchIds = new uint256[](100);
+        uint256 readyCount = 0;
+        
+        // This is a simplified implementation - in production, you'd want to maintain
+        // a registry of active employers to avoid scanning all possible addresses
+        
+        // For now, we'll return false and let manual processing handle payrolls
+        // In a full implementation, you'd maintain an array of active employers
+        upkeepNeeded = false;
+        performData = "";
+        
+        // TODO: Implement employer registry for efficient automation
+        // This would require tracking active employers and their pending batches
+    }
+
+    /**
+     * @dev Chainlink Automation performUpkeep function
+     * @param performData Encoded data from checkUpkeep
+     */
+    function performUpkeep(bytes calldata performData) external {
+        require(
+            authorizedKeepers[msg.sender] || msg.sender == automationRegistry,
+            "Not authorized for automation"
+        );
+        
+        // Decode performData to get employer and batchId
+        (address employer, uint256 batchId) = abi.decode(performData, (address, uint256));
+        
+        // Verify the batch is ready for processing
+        require(batchId < batchCount[employer], "Batch not found");
+        
+        PayrollBatch storage batch = payrollBatches[employer][batchId];
+        require(!batch.processed, "Batch already processed");
+        require(block.timestamp >= batch.scheduledDate, "Batch not ready");
+        
+        // Process the payroll
+        this.processPayroll(employer, batchId);
+    }
+
+    /**
      * @dev Emergency withdrawal function
      * @param amount Amount to withdraw
      */
@@ -628,6 +682,6 @@ contract PayrollEngineUpgradeable is
      * @dev Get contract version
      */
     function version() external pure returns (string memory) {
-        return "1.0.0";
+        return "1.1.0";
     }
 }
