@@ -10,6 +10,20 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 /**
+ * @title IRWA
+ * @dev Interface for RWA token contracts
+ */
+interface IRWA {
+    function deposit(uint256 usdcAmount) external;
+    function redeem(uint256 tokenAmount) external;
+    function balanceOf(address account) external view returns (uint256);
+    function getPendingYield(address user) external view returns (uint256);
+    function getCurrentValue(address user) external view returns (uint256);
+    function getYieldEarned(address user) external view returns (uint256);
+    function getAPY() external view returns (uint256);
+}
+
+/**
  * @title BucketVaultUpgradeable
  * @dev Upgradeable smart contract for automated fund splitting across budget buckets with savings goals
  * @custom:security-contact security@paywarp.com
@@ -64,10 +78,15 @@ contract BucketVaultUpgradeable is
     mapping(address => uint256) public userNonces;
     
     IERC20 public baseToken; // USDC or similar
-    address public yieldToken; // USDY or mUSD address
+    address public yieldToken; // USDY or mUSD address (deprecated, use rwaContracts)
     uint256 public totalValueLocked;
     uint256 public protocolFee; // Basis points
     address public feeRecipient;
+
+    // RWA Integration
+    mapping(string => address) public rwaContracts; // bucket name => RWA contract address
+    mapping(address => mapping(string => uint256)) public userRWABalances; // user => bucket => RWA token balance
+    bool public rwaIntegrationEnabled;
 
     // Security features
     mapping(address => uint256) public dailyWithdrawLimits;
@@ -115,6 +134,12 @@ contract BucketVaultUpgradeable is
     event EmergencyWithdrawRequested(address indexed user, uint256 timestamp);
     event EmergencyWithdrawExecuted(address indexed user, uint256 amount);
     event DailyLimitSet(address indexed user, uint256 limit);
+
+    // RWA Integration Events
+    event RWAContractSet(string indexed bucket, address indexed rwaContract);
+    event RWADeposit(address indexed user, string indexed bucket, uint256 usdcAmount, uint256 rwaTokenAmount);
+    event RWAWithdrawal(address indexed user, string indexed bucket, uint256 rwaTokenAmount, uint256 usdcAmount);
+    event RWAIntegrationToggled(bool enabled);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -172,6 +197,34 @@ contract BucketVaultUpgradeable is
     function setFeeRecipient(address _feeRecipient) external onlyOwner {
         require(_feeRecipient != address(0), "Invalid recipient");
         feeRecipient = _feeRecipient;
+    }
+
+    /**
+     * @dev Set RWA contract for a specific bucket
+     * @param bucket Bucket name (billings, savings, growth, instant)
+     * @param rwaContract Address of the RWA contract
+     */
+    function setRWAContract(string memory bucket, address rwaContract) external onlyOwner {
+        require(rwaContract != address(0), "Invalid RWA contract");
+        require(
+            keccak256(abi.encodePacked(bucket)) == keccak256(abi.encodePacked("billings")) ||
+            keccak256(abi.encodePacked(bucket)) == keccak256(abi.encodePacked("savings")) ||
+            keccak256(abi.encodePacked(bucket)) == keccak256(abi.encodePacked("growth")) ||
+            keccak256(abi.encodePacked(bucket)) == keccak256(abi.encodePacked("instant")),
+            "Invalid bucket name"
+        );
+        
+        rwaContracts[bucket] = rwaContract;
+        emit RWAContractSet(bucket, rwaContract);
+    }
+
+    /**
+     * @dev Enable or disable RWA integration
+     * @param enabled Whether RWA integration should be enabled
+     */
+    function setRWAIntegrationEnabled(bool enabled) external onlyOwner {
+        rwaIntegrationEnabled = enabled;
+        emit RWAIntegrationToggled(enabled);
     }
 
     /**
@@ -262,12 +315,22 @@ contract BucketVaultUpgradeable is
         uint256 instantAmount = (netAmount * config.instantPercent) / BASIS_POINTS;
         uint256 spendableAmount = (netAmount * config.spendablePercent) / BASIS_POINTS;
 
-        // Update bucket balances
-        userBuckets[msg.sender]["billings"].balance += billingsAmount;
-        userBuckets[msg.sender]["savings"].balance += savingsAmount;
-        userBuckets[msg.sender]["growth"].balance += growthAmount;
-        userBuckets[msg.sender]["instant"].balance += instantAmount;
-        userBuckets[msg.sender]["spendable"].balance += spendableAmount;
+        // Route funds to RWA contracts or update bucket balances
+        if (rwaIntegrationEnabled) {
+            _routeToRWA(msg.sender, "billings", billingsAmount);
+            _routeToRWA(msg.sender, "savings", savingsAmount);
+            _routeToRWA(msg.sender, "growth", growthAmount);
+            _routeToRWA(msg.sender, "instant", instantAmount);
+            // Spendable bucket always stays in USDC
+            userBuckets[msg.sender]["spendable"].balance += spendableAmount;
+        } else {
+            // Fallback to regular bucket balances
+            userBuckets[msg.sender]["billings"].balance += billingsAmount;
+            userBuckets[msg.sender]["savings"].balance += savingsAmount;
+            userBuckets[msg.sender]["growth"].balance += growthAmount;
+            userBuckets[msg.sender]["instant"].balance += instantAmount;
+            userBuckets[msg.sender]["spendable"].balance += spendableAmount;
+        }
 
         // Update TVL
         totalValueLocked += netAmount;
@@ -433,13 +496,22 @@ contract BucketVaultUpgradeable is
             dailyWithdrawn[msg.sender][today] += amount;
         }
 
-        BucketBalance storage bucketBalance = userBuckets[msg.sender][bucket];
-        require(bucketBalance.balance >= amount, "Insufficient balance");
+        uint256 actualWithdrawn;
+        
+        if (rwaIntegrationEnabled && rwaContracts[bucket] != address(0)) {
+            // Withdraw from RWA contract
+            actualWithdrawn = _withdrawFromRWA(msg.sender, bucket, amount);
+        } else {
+            // Withdraw from regular bucket balance
+            BucketBalance storage bucketBalance = userBuckets[msg.sender][bucket];
+            require(bucketBalance.balance >= amount, "Insufficient balance");
+            
+            bucketBalance.balance -= amount;
+            actualWithdrawn = amount;
+        }
 
-        bucketBalance.balance -= amount;
-        totalValueLocked -= amount;
-
-        baseToken.safeTransfer(msg.sender, amount);
+        totalValueLocked -= actualWithdrawn;
+        baseToken.safeTransfer(msg.sender, actualWithdrawn);
     }
 
     /**
@@ -463,17 +535,131 @@ contract BucketVaultUpgradeable is
     }
 
     /**
-     * @dev Get user's bucket balance
+     * @dev Route funds to RWA contract or fallback to regular bucket
      * @param user User address
      * @param bucket Bucket name
-     * @return BucketBalance struct
+     * @param amount Amount to route
+     */
+    function _routeToRWA(address user, string memory bucket, uint256 amount) internal {
+        if (amount == 0) return;
+        
+        address rwaContract = rwaContracts[bucket];
+        
+        if (rwaContract != address(0)) {
+            try this._safeRWADeposit(rwaContract, amount) {
+                // Track RWA token balance for user
+                IRWA rwa = IRWA(rwaContract);
+                uint256 rwaTokenBalance = rwa.balanceOf(address(this));
+                userRWABalances[user][bucket] = rwaTokenBalance;
+                
+                // Update bucket to reflect RWA integration
+                userBuckets[user][bucket].isYielding = true;
+                userBuckets[user][bucket].lastYieldUpdate = block.timestamp;
+                
+                emit RWADeposit(user, bucket, amount, rwaTokenBalance);
+            } catch {
+                // Fallback to regular bucket balance on RWA failure
+                userBuckets[user][bucket].balance += amount;
+            }
+        } else {
+            // No RWA contract configured, use regular bucket
+            userBuckets[user][bucket].balance += amount;
+        }
+    }
+
+    /**
+     * @dev Withdraw from RWA contract
+     * @param user User address
+     * @param bucket Bucket name
+     * @param amount Amount to withdraw in USDC terms
+     * @return actualWithdrawn Actual amount withdrawn
+     */
+    function _withdrawFromRWA(address user, string memory bucket, uint256 amount) internal returns (uint256 actualWithdrawn) {
+        address rwaContract = rwaContracts[bucket];
+        require(rwaContract != address(0), "RWA contract not set");
+        
+        IRWA rwa = IRWA(rwaContract);
+        uint256 currentValue = rwa.getCurrentValue(address(this));
+        require(currentValue >= amount, "Insufficient RWA balance");
+        
+        // Calculate RWA tokens to redeem based on current value
+        uint256 rwaTokenBalance = rwa.balanceOf(address(this));
+        uint256 tokensToRedeem = (amount * rwaTokenBalance) / currentValue;
+        
+        try this._safeRWARedeem(rwaContract, tokensToRedeem) {
+            // Update user's RWA balance tracking
+            userRWABalances[user][bucket] = rwa.balanceOf(address(this));
+            
+            actualWithdrawn = amount;
+            emit RWAWithdrawal(user, bucket, tokensToRedeem, amount);
+        } catch {
+            // Fallback to regular bucket balance on RWA failure
+            BucketBalance storage bucketBalance = userBuckets[user][bucket];
+            require(bucketBalance.balance >= amount, "Insufficient fallback balance");
+            
+            bucketBalance.balance -= amount;
+            actualWithdrawn = amount;
+        }
+    }
+
+    /**
+     * @dev Safe RWA deposit with external call isolation
+     * @param rwaContract RWA contract address
+     * @param amount Amount to deposit
+     */
+    function _safeRWADeposit(address rwaContract, uint256 amount) external {
+        require(msg.sender == address(this), "Internal function only");
+        
+        // For mock contracts, we just call deposit with the amount
+        // In production, this would involve actual USDC transfers
+        IRWA(rwaContract).deposit(amount);
+    }
+
+    /**
+     * @dev Safe RWA redemption with external call isolation
+     * @param rwaContract RWA contract address
+     * @param tokenAmount Amount of RWA tokens to redeem
+     */
+    function _safeRWARedeem(address rwaContract, uint256 tokenAmount) external {
+        require(msg.sender == address(this), "Internal function only");
+        
+        // Redeem RWA tokens for USDC
+        IRWA(rwaContract).redeem(tokenAmount);
+    }
+
+    /**
+     * @dev Get user's bucket balance including RWA tokens and yields
+     * @param user User address
+     * @param bucket Bucket name
+     * @return BucketBalance struct with updated values
      */
     function getBucketBalance(address user, string memory bucket) 
         external 
         view 
         returns (BucketBalance memory) 
     {
-        return userBuckets[user][bucket];
+        BucketBalance memory bucketBalance = userBuckets[user][bucket];
+        
+        if (rwaIntegrationEnabled && rwaContracts[bucket] != address(0)) {
+            // Get RWA token balance and current value
+            IRWA rwaContract = IRWA(rwaContracts[bucket]);
+            uint256 rwaTokenBalance = rwaContract.balanceOf(user);
+            uint256 currentValue = rwaContract.getCurrentValue(user);
+            uint256 pendingYield = rwaContract.getPendingYield(user);
+            
+            // Update bucket balance with RWA data
+            bucketBalance.yieldBalance = rwaTokenBalance;
+            bucketBalance.balance = currentValue; // Current USDC value of RWA tokens
+            bucketBalance.isYielding = rwaTokenBalance > 0;
+            bucketBalance.lastYieldUpdate = block.timestamp;
+            
+            // Add pending yield to balance for display purposes
+            if (pendingYield > 0) {
+                bucketBalance.balance += pendingYield;
+            }
+        }
+        
+        return bucketBalance;
     }
 
     /**
@@ -498,6 +684,64 @@ contract BucketVaultUpgradeable is
      */
     function getSplitConfig(address user) external view returns (SplitConfig memory) {
         return userSplitConfigs[user];
+    }
+
+    /**
+     * @dev Get RWA contract address for a bucket
+     * @param bucket Bucket name
+     * @return rwaContract RWA contract address
+     */
+    function getRWAContract(string memory bucket) external view returns (address rwaContract) {
+        return rwaContracts[bucket];
+    }
+
+    /**
+     * @dev Get user's RWA token balance for a bucket
+     * @param user User address
+     * @param bucket Bucket name
+     * @return rwaBalance RWA token balance
+     */
+    function getUserRWABalance(address user, string memory bucket) external view returns (uint256 rwaBalance) {
+        address rwaContract = rwaContracts[bucket];
+        if (rwaContract != address(0)) {
+            return IRWA(rwaContract).balanceOf(user);
+        }
+        return 0;
+    }
+
+    /**
+     * @dev Get pending yield for user's bucket
+     * @param user User address
+     * @param bucket Bucket name
+     * @return pendingYield Pending yield amount in USDC terms
+     */
+    function getBucketPendingYield(address user, string memory bucket) external view returns (uint256 pendingYield) {
+        address rwaContract = rwaContracts[bucket];
+        if (rwaContract != address(0)) {
+            return IRWA(rwaContract).getPendingYield(user);
+        }
+        return 0;
+    }
+
+    /**
+     * @dev Get APY for a bucket's RWA contract
+     * @param bucket Bucket name
+     * @return apy APY in basis points
+     */
+    function getBucketAPY(string memory bucket) external view returns (uint256 apy) {
+        address rwaContract = rwaContracts[bucket];
+        if (rwaContract != address(0)) {
+            return IRWA(rwaContract).getAPY();
+        }
+        return 0;
+    }
+
+    /**
+     * @dev Check if RWA integration is enabled
+     * @return enabled Whether RWA integration is enabled
+     */
+    function isRWAIntegrationEnabled() external view returns (bool enabled) {
+        return rwaIntegrationEnabled;
     }
 
     /**
