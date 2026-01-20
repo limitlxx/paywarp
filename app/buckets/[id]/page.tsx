@@ -40,7 +40,6 @@ import { SavingsGoalOverview } from "@/components/savings-goal-overview"
 import { DepositModal } from "@/components/modals/deposit-modal"
 import { WithdrawModal } from "@/components/modals/withdraw-modal"
 import { TransferModal } from "@/components/modals/transfer-modal"
-import { NetworkGuard } from "@/components/network-guard"
 import { AuthGuard } from "@/components/auth-guard"
 import { useBucketBalances } from "@/hooks/use-bucket-balances"
 import { useTransactionHistory } from "@/hooks/use-transaction-history"
@@ -307,7 +306,7 @@ export default function BucketDetails() {
   // Show connection prompt if not connected
   if (!isConnected) {
     return (
-      <NetworkGuard>
+      <AuthGuard>
         <div className="min-h-screen gradient-bg pb-24">
           <DashboardHeader />
           <main className="p-4 sm:p-6 lg:p-8">
@@ -342,12 +341,12 @@ export default function BucketDetails() {
           </main>
           <BottomNav />
         </div>
-      </NetworkGuard>
+      </AuthGuard>
     )
   }
 
   return (
-    <NetworkGuard>
+    <AuthGuard>
       <div className="min-h-screen gradient-bg pb-24">
       {/* <SimpleHeader /> */}
       <DashboardHeader />
@@ -872,6 +871,6 @@ export default function BucketDetails() {
         initialFromId={id as BucketType}
       />
     </div>
-  </NetworkGuard>
+  </AuthGuard>
   )
 }

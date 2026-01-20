@@ -46,20 +46,41 @@ export function TransferModal({ open, onOpenChange, initialFromId }: TransferMod
 
   // Convert bucket balances to the format expected by the UI
   const uiBuckets = useMemo(() => {
-    return buckets.map(bucket => ({
-      id: bucket.name as BucketType,
-      name: bucket.name.charAt(0).toUpperCase() + bucket.name.slice(1),
-      balance: Number(bucket.formattedBalance), // Display balance (formatted from contract's 18 decimals with 6 decimal display)
-      rawBalance: bucket.balance, // Keep raw bigint for contract calls
-      isYielding: bucket.isYielding,
-    }))
+    return buckets.map(bucket => {
+      // Calculate total RWA value for this bucket
+      const usdyValue = bucket.usdyBalance?.currentValue || 0
+      const musdValue = bucket.musdBalance?.currentValue || 0
+      const usdeValue = bucket.usdeBalance?.currentValue || 0
+      const methValue = bucket.methBalance?.currentValue || 0
+      const totalRWAValue = usdyValue + musdValue + usdeValue + methValue
+      
+      // Total balance = USDC balance + RWA token current value
+      const usdcBalance = Number(bucket.formattedBalance)
+      const totalBalance = usdcBalance + totalRWAValue
+      
+      return {
+        id: bucket.name as BucketType,
+        name: bucket.name.charAt(0).toUpperCase() + bucket.name.slice(1),
+        balance: totalBalance, // Show total balance including RWA tokens
+        usdcBalance: usdcBalance, // Keep USDC balance for transfer calculations
+        rwaValue: totalRWAValue, // RWA token value
+        rawBalance: bucket.balance, // Keep raw bigint for contract calls
+        isYielding: bucket.isYielding,
+      }
+    })
   }, [buckets])
 
   // Debug: Log buckets data
   useEffect(() => {
     console.log('🔍 Transfer Modal - Buckets data:', {
       bucketsCount: uiBuckets.length,
-      buckets: uiBuckets.map(b => ({ id: b.id, name: b.name, balance: b.balance })),
+      buckets: uiBuckets.map(b => ({ 
+        id: b.id, 
+        name: b.name, 
+        totalBalance: b.balance,
+        usdcBalance: b.usdcBalance,
+        rwaValue: b.rwaValue
+      })),
     })
   }, [uiBuckets])
 
@@ -195,7 +216,7 @@ export function TransferModal({ open, onOpenChange, initialFromId }: TransferMod
     onOpenChange(open)
   }
 
-  const isValid = amount && Number(amount) > 0 && Number(amount) <= (fromBucket?.balance || 0) && fromId !== toId
+  const isValid = amount && Number(amount) > 0 && Number(amount) <= (fromBucket?.usdcBalance || 0) && fromId !== toId
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
@@ -208,7 +229,7 @@ export function TransferModal({ open, onOpenChange, initialFromId }: TransferMod
             Transfer Funds
           </DialogTitle>
           <DialogDescription className="text-muted-foreground">
-            Move liquidity instantly between your PayWarp buckets.
+            Move liquidity instantly between your PayWarp buckets. Transfers automatically convert between USDC and RWA tokens as needed.
           </DialogDescription>
         </DialogHeader>
 
@@ -236,9 +257,13 @@ export function TransferModal({ open, onOpenChange, initialFromId }: TransferMod
                     </SelectContent>
                   </Select>
                   {fromBucket && (
-                    <p className="text-xs text-muted-foreground">
-                      Balance: <span className="text-foreground font-mono font-bold">${fromBucket.balance.toFixed(2)}</span>
-                    </p>
+                    <div className="text-xs text-muted-foreground space-y-1">
+                      <p>Total: <span className="text-foreground font-mono font-bold">${fromBucket.balance.toFixed(2)}</span></p>
+                      <p>USDC: <span className="text-foreground font-mono">${fromBucket.usdcBalance.toFixed(2)}</span></p>
+                      {fromBucket.rwaValue > 0 && (
+                        <p>RWA: <span className="text-green-400 font-mono">${fromBucket.rwaValue.toFixed(2)}</span></p>
+                      )}
+                    </div>
                   )}
                 </div>
                 <div className="space-y-2">
@@ -261,9 +286,13 @@ export function TransferModal({ open, onOpenChange, initialFromId }: TransferMod
                     </SelectContent>
                   </Select>
                   {toBucket && (
-                    <p className="text-xs text-muted-foreground">
-                      Balance: <span className="text-foreground font-mono font-bold">${toBucket.balance.toFixed(2)}</span>
-                    </p>
+                    <div className="text-xs text-muted-foreground space-y-1">
+                      <p>Total: <span className="text-foreground font-mono font-bold">${toBucket.balance.toFixed(2)}</span></p>
+                      <p>USDC: <span className="text-foreground font-mono">${toBucket.usdcBalance.toFixed(2)}</span></p>
+                      {toBucket.rwaValue > 0 && (
+                        <p>RWA: <span className="text-green-400 font-mono">${toBucket.rwaValue.toFixed(2)}</span></p>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
@@ -273,10 +302,10 @@ export function TransferModal({ open, onOpenChange, initialFromId }: TransferMod
                   <Label className="text-purple-300">Amount (USDC)</Label>
                   <button
                     type="button"
-                    onClick={() => setAmount(fromBucket?.balance.toString() || "0")}
+                    onClick={() => setAmount(fromBucket?.usdcBalance.toString() || "0")}
                     className="text-xs text-purple-400 hover:text-purple-300 font-medium"
                   >
-                    Max: ${fromBucket?.balance.toFixed(2) || "0.00"}
+                    Max: ${fromBucket?.usdcBalance.toFixed(2) || "0.00"} USDC
                   </button>
                 </div>
                 <div className="relative">
@@ -290,13 +319,13 @@ export function TransferModal({ open, onOpenChange, initialFromId }: TransferMod
                     placeholder="0.00"
                     step="0.01"
                     min="0"
-                    max={fromBucket?.balance || 0}
+                    max={fromBucket?.usdcBalance || 0}
                     className="pl-8 text-3xl h-16 glass border-purple-500/30 focus:border-purple-500 font-bold bg-transparent"
                   />
                 </div>
                 {amount && Number(amount) > 0 && fromBucket && (
                   <p className="text-xs text-muted-foreground">
-                    After transfer: {fromBucket.name} will have ${(fromBucket.balance - Number(amount)).toFixed(2)}
+                    After transfer: {fromBucket.name} will have ${(fromBucket.usdcBalance - Number(amount)).toFixed(2)} USDC
                   </p>
                 )}
               </div>
@@ -307,9 +336,27 @@ export function TransferModal({ open, onOpenChange, initialFromId }: TransferMod
                 </div>
               )}
 
-              {amount && Number(amount) > (fromBucket?.balance || 0) && (
+              {fromId !== toId && fromBucket && toBucket && (
+                <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 text-blue-400 text-sm">
+                  <div className="flex items-center gap-2 mb-1">
+                    <ArrowRightLeft className="w-3 h-3" />
+                    <span className="font-medium">Auto-Conversion</span>
+                  </div>
+                  {fromBucket.rwaValue > 0 && (
+                    <p>• RWA tokens in {fromBucket.name} will be redeemed to USDC</p>
+                  )}
+                  {toBucket.id !== 'spendable' && (
+                    <p>• USDC will be converted to {toBucket.name} RWA tokens for yield</p>
+                  )}
+                  {toBucket.id === 'spendable' && (
+                    <p>• USDC will remain as USDC in {toBucket.name} (no yield)</p>
+                  )}
+                </div>
+              )}
+
+              {amount && Number(amount) > (fromBucket?.usdcBalance || 0) && (
                 <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm">
-                  Insufficient balance in {fromBucket?.name}
+                  Insufficient USDC balance in {fromBucket?.name}. Available: ${fromBucket?.usdcBalance.toFixed(2)} USDC
                 </div>
               )}
             </motion.div>
@@ -346,11 +393,11 @@ export function TransferModal({ open, onOpenChange, initialFromId }: TransferMod
                 {fromBucket && toBucket && (
                   <div className="mt-4 p-3 rounded-lg bg-background/50 space-y-2 text-xs">
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">{fromBucket.name}:</span>
-                      <span className="font-mono">${fromBucket.balance.toFixed(2)}</span>
+                      <span className="text-muted-foreground">{fromBucket.name} USDC:</span>
+                      <span className="font-mono">${fromBucket.usdcBalance.toFixed(2)}</span>
                     </div>
                     <div className="flex justify-between">
-                      <span className="text-muted-foreground">{toBucket.name}:</span>
+                      <span className="text-muted-foreground">{toBucket.name} Total:</span>
                       <span className="font-mono">${toBucket.balance.toFixed(2)}</span>
                     </div>
                   </div>

@@ -14,7 +14,6 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useMobileCapabilities, useMobileRenderOptimization, useMobilePerformanceMonitoring } from "@/lib/mobile-optimization"
 import { useLoadingManager } from "@/lib/loading-state-manager"
 import { useAnimationPerformanceMonitoring } from "@/lib/animation-optimizer"
-import { NetworkGuard } from "@/components/network-guard"
 import { DashboardHeader } from "@/components/dashboard-header"
 import { useBucketBalances } from "@/hooks/use-bucket-balances"
 import { useAccount } from "wagmi"
@@ -102,9 +101,8 @@ export default function BucketsPage() {
     if (!contractBuckets || contractBuckets.length === 0) return []
     
     return contractBuckets.map(bucket => {
-      const balance = Number(bucket.formattedBalance)
+      const usdcBalance = Number(bucket.formattedBalance)
       const totalBal = Number(formattedTotalBalance)
-      const percentage = totalBal > 0 ? Math.round((balance / totalBal) * 100) : 0
       
       // Enhanced RWA data calculation based on bucket type
       const yieldBalance = Number(bucket.formattedYield)
@@ -127,10 +125,14 @@ export default function BucketsPage() {
                            (bucket.usdeBalance?.currentValue || 0) +
                            (bucket.methBalance?.currentValue || 0)
       
+      // TOTAL BALANCE = USDC Balance + RWA Token Current Value
+      const totalBalance = usdcBalance + totalRWAValue
+      const percentage = totalBal > 0 ? Math.round((usdcBalance / totalBal) * 100) : 0
+      
       return {
         id: bucket.name as "billings" | "savings" | "growth" | "instant" | "spendable",
         name: bucket.name.charAt(0).toUpperCase() + bucket.name.slice(1),
-        balance: balance,
+        balance: totalBalance, // Show total balance including RWA tokens
         percentage: percentage,
         color: bucketColors[bucket.name as keyof typeof bucketColors],
         icon: bucketIcons[bucket.name as keyof typeof bucketIcons],
@@ -297,8 +299,7 @@ export default function BucketsPage() {
 
   return (
     <AuthGuard>
-      <NetworkGuard>
-        <div className="min-h-screen gradient-bg pb-24">
+      <div className="min-h-screen gradient-bg pb-24">
         {/* <SimpleHeader /> */}
         <DashboardHeader />
 
@@ -446,7 +447,6 @@ export default function BucketsPage() {
 
       <BottomNav />
     </div>
-  </NetworkGuard>
-</AuthGuard>
+  </AuthGuard>
   )
 }
