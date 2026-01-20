@@ -88,8 +88,8 @@ export function BucketCard({
   const effectiveTotalYieldEarned = bucketYieldData?.totalYieldEarned || totalYieldEarned
   const effectiveCurrentRWAValue = currentRWAValue || (effectiveTokenBalance * 1.0) // Approximate value
   
-  // Enhanced yield bubble activation
-  const shouldShowYieldBubbles = effectiveIsYielding && (effectivePendingYield > 0.01 || effectiveTokenBalance > 0)
+  // Enhanced yield bubble activation - show bubbles for all yielding buckets
+  const shouldShowYieldBubbles = effectiveIsYielding || effectiveAPY > 0 || effectiveTokenBalance > 0
   
   // Mobile and performance optimizations
   const capabilities = useMobileCapabilities()
@@ -204,7 +204,7 @@ export function BucketCard({
         )}
         
         <YieldBubbles
-          active={bubbleCount > 0}
+          active={shouldShowYieldBubbles}
           type={getBubbleType()}
           color={color}
         />
@@ -266,10 +266,12 @@ export function BucketCard({
                 </div>
 
                 {/* Enhanced RWA Balance Display */}
-                {(effectiveTokenBalance > 0 || effectiveTotalYieldEarned > 0 || effectiveCurrentRWAValue > 0) && (
+                {(effectiveTokenBalance > 0 || effectiveTotalYieldEarned > 0 || effectiveCurrentRWAValue > 0 || effectiveAPY > 0) && (
                   <div className="space-y-3 p-3 rounded-lg bg-background/50 border border-border/50">
                     <div className="flex justify-between items-center">
-                      <span className="text-xs font-medium text-muted-foreground">RWA Holdings</span>
+                      <span className="text-xs font-medium text-muted-foreground">
+                        {effectiveTokenBalance > 0 ? 'RWA Holdings' : 'Yield Info'}
+                      </span>
                       <div className="flex items-center gap-2">
                         {effectiveTotalYieldEarned > 0 && (
                           <span className="text-xs text-green-400 font-medium">
@@ -283,32 +285,88 @@ export function BucketCard({
                     </div>
                     
                     {/* Token Balances based on bucket type */}
-                    {id === 'billings' && usdyBalance > 0 && (
-                      <div className="flex justify-between text-xs">
-                        <span className="text-muted-foreground">USDY:</span>
-                        <span className="font-mono text-foreground">{usdyBalance.toFixed(4)}</span>
-                      </div>
+                    {id === 'billings' && (usdyBalance > 0 || effectiveAPY > 0) && (
+                      <>
+                        {usdyBalance > 0 && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-muted-foreground">USDY Tokens:</span>
+                            <span className="font-mono text-foreground">{usdyBalance.toFixed(4)}</span>
+                          </div>
+                        )}
+                        {effectiveAPY > 0 && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-muted-foreground">APY:</span>
+                            <span className="text-green-400 font-medium">{effectiveAPY.toFixed(1)}%</span>
+                          </div>
+                        )}
+                      </>
                     )}
                     
-                    {id === 'savings' && musdBalance > 0 && (
-                      <div className="flex justify-between text-xs">
-                        <span className="text-muted-foreground">mUSD:</span>
-                        <span className="font-mono text-foreground">{musdBalance.toFixed(4)}</span>
-                      </div>
+                    {id === 'savings' && (musdBalance > 0 || effectiveAPY > 0) && (
+                      <>
+                        {musdBalance > 0 && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-muted-foreground">mUSD Tokens:</span>
+                            <span className="font-mono text-foreground">{musdBalance.toFixed(4)}</span>
+                          </div>
+                        )}
+                        {effectiveAPY > 0 && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-muted-foreground">APY:</span>
+                            <span className="text-green-400 font-medium">{effectiveAPY.toFixed(1)}%</span>
+                          </div>
+                        )}
+                      </>
                     )}
 
-                    {id === 'growth' && usdeBalance > 0 && (
-                      <div className="flex justify-between text-xs">
-                        <span className="text-muted-foreground">USDe:</span>
-                        <span className="font-mono text-foreground">{usdeBalance.toFixed(4)}</span>
-                      </div>
+                    {id === 'growth' && (usdeBalance > 0 || effectiveAPY > 0) && (
+                      <>
+                        {usdeBalance > 0 && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-muted-foreground">USDe Tokens:</span>
+                            <span className="font-mono text-foreground">{usdeBalance.toFixed(4)}</span>
+                          </div>
+                        )}
+                        {effectiveAPY > 0 && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-muted-foreground">APY:</span>
+                            <span className="text-green-400 font-medium">{effectiveAPY.toFixed(1)}%</span>
+                          </div>
+                        )}
+                        {effectiveAPY > 0 && balance > 0 && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-muted-foreground">24h Yield:</span>
+                            <span className="text-green-400 font-medium">
+                              +${((balance * effectiveAPY / 100) / 365).toFixed(2)}
+                            </span>
+                          </div>
+                        )}
+                      </>
                     )}
 
-                    {id === 'instant' && methBalance > 0 && (
-                      <div className="flex justify-between text-xs">
-                        <span className="text-muted-foreground">mETH:</span>
-                        <span className="font-mono text-foreground">{methBalance.toFixed(4)}</span>
-                      </div>
+                    {id === 'instant' && (methBalance > 0 || effectiveAPY > 0) && (
+                      <>
+                        {methBalance > 0 && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-muted-foreground">mETH Tokens:</span>
+                            <span className="font-mono text-foreground">{methBalance.toFixed(4)}</span>
+                          </div>
+                        )}
+                        {effectiveAPY > 0 && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-muted-foreground">APY:</span>
+                            <span className="text-green-400 font-medium">{effectiveAPY.toFixed(1)}%</span>
+                          </div>
+                        )}
+                        {effectiveAPY > 0 && balance > 0 && (
+                          <div className="flex justify-between text-xs">
+                            <span className="text-muted-foreground">24h Yield:</span>
+                            <span className="text-green-400 font-medium">
+                              +${((balance * effectiveAPY / 100) / 365).toFixed(2)}
+                            </span>
+                          </div>
+                        )}
+                      </>
                     )}
                     
                     {/* Total RWA Value */}
@@ -320,16 +378,6 @@ export function BucketCard({
                           fromCurrency="USD" 
                           className="text-xs font-medium text-foreground" 
                         />
-                      </div>
-                    )}
-
-                    {/* Yield Performance Indicator */}
-                    {effectiveAPY > 0 && (
-                      <div className="flex justify-between text-xs border-t border-border/30 pt-2">
-                        <span className="text-muted-foreground">24h Yield:</span>
-                        <span className="text-green-400 font-medium">
-                          +${((balance * effectiveAPY / 100) / 365).toFixed(2)}
-                        </span>
                       </div>
                     )}
 

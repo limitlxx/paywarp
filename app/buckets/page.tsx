@@ -127,7 +127,10 @@ export default function BucketsPage() {
       
       // TOTAL BALANCE = USDC Balance + RWA Token Current Value
       const totalBalance = usdcBalance + totalRWAValue
-      const percentage = totalBal > 0 ? Math.round((usdcBalance / totalBal) * 100) : 0
+      
+      // Calculate percentage based on total balance (including RWA value)
+      const totalPortfolioValue = totalBal + totalRWAValue
+      const percentage = totalPortfolioValue > 0 ? Math.round((totalBalance / totalPortfolioValue) * 100) : 0
       
       return {
         id: bucket.name as "billings" | "savings" | "growth" | "instant" | "spendable",
@@ -136,9 +139,9 @@ export default function BucketsPage() {
         percentage: percentage,
         color: bucketColors[bucket.name as keyof typeof bucketColors],
         icon: bucketIcons[bucket.name as keyof typeof bucketIcons],
-        isYielding: bucket.isYielding,
+        isYielding: bucket.name !== 'spendable', // All buckets except spendable should be yielding
         description: bucketDescriptions[bucket.name as keyof typeof bucketDescriptions],
-        apy: bucket.isYielding ? getBucketAPY(bucket.name) : undefined,
+        apy: getBucketAPY(bucket.name), // Always show APY for all buckets
         lastUpdated: new Date(),
         // Enhanced RWA props based on bucket type
         usdyBalance: usdyBalance,
@@ -198,11 +201,14 @@ export default function BucketsPage() {
       percentage: 45,
       color: "#EF4444",
       icon: Droplet,
+      isYielding: true,
       description: "Automated expenses & bills",
       apy: 4.2,
       lastUpdated: new Date(),
       usdyBalance: isConnected ? 0 : 125.4,
       musdBalance: 0,
+      usdeBalance: 0,
+      methBalance: 0,
       totalYieldEarned: isConnected ? 0 : 12.45,
       currentRWAValue: isConnected ? 0 : 131.73,
       enableRealTimeYields: false, // Disable for demo data
@@ -220,6 +226,8 @@ export default function BucketsPage() {
       lastUpdated: new Date(),
       usdyBalance: 0,
       musdBalance: isConnected ? 0 : 452.3,
+      usdeBalance: 0,
+      methBalance: 0,
       totalYieldEarned: isConnected ? 0 : 45.23,
       currentRWAValue: isConnected ? 0 : 475.92,
       enableRealTimeYields: false,
@@ -237,6 +245,8 @@ export default function BucketsPage() {
       lastUpdated: new Date(),
       usdyBalance: 0,
       musdBalance: 0,
+      usdeBalance: isConnected ? 0 : 281.2,
+      methBalance: 0,
       totalYieldEarned: isConnected ? 0 : 95.6,
       currentRWAValue: isConnected ? 0 : 29526.4,
       enableRealTimeYields: false,
@@ -248,11 +258,14 @@ export default function BucketsPage() {
       percentage: 60,
       color: "#22C55E",
       icon: Zap,
+      isYielding: true,
       description: "Team payroll & salaries",
       apy: 3.1,
       lastUpdated: new Date(),
       usdyBalance: 0,
       musdBalance: 0,
+      usdeBalance: 0,
+      methBalance: isConnected ? 0 : 158.0,
       totalYieldEarned: isConnected ? 0 : 13.4,
       currentRWAValue: isConnected ? 0 : 16274,
       enableRealTimeYields: false,
@@ -264,11 +277,14 @@ export default function BucketsPage() {
       percentage: 100,
       color: "#94A3B8",
       icon: Wallet,
+      isYielding: false,
       description: "Available for immediate use",
       apy: 0,
       lastUpdated: new Date(),
       usdyBalance: 0,
       musdBalance: 0,
+      usdeBalance: 0,
+      methBalance: 0,
       totalYieldEarned: 0,
       currentRWAValue: 0,
       enableRealTimeYields: false,
