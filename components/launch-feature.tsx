@@ -3,79 +3,48 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useRouter } from 'next/navigation';
-import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { Card, CardContent } from './ui/card';
 import { Button } from './ui/button';
-import { Badge } from './ui/badge';
 import { Progress } from './ui/progress';
 import { 
   Settings, 
-  Receipt, 
   ArrowRight, 
-  CheckCircle, 
-  Percent,
-  FileSearch,
-  Wallet,
-  TrendingUp,
-  Target,
   Sparkles,
-  ChevronRight
+  Target,
+  Percent,
+  CheckCircle
 } from 'lucide-react';
-import { useSettings } from '@/hooks/use-settings';
-import { useAccount } from 'wagmi';
 
 interface LaunchFeatureProps {
   onComplete?: () => void;
 }
 
-type LaunchStep = 'welcome' | 'settings-preview' | 'expenses-preview' | 'complete';
+type LaunchStep = 'welcome' | 'settings';
 
 export function LaunchFeature({ onComplete }: LaunchFeatureProps) {
   const [currentStep, setCurrentStep] = useState<LaunchStep>('welcome');
   const [progress, setProgress] = useState(0);
   const router = useRouter();
-  const { address } = useAccount();
-  const { settings } = useSettings();
 
   // Update progress based on current step
   useEffect(() => {
     const progressMap = {
-      'welcome': 25,
-      'settings-preview': 50,
-      'expenses-preview': 75,
-      'complete': 100
+      'welcome': 50,
+      'settings': 100
     };
     setProgress(progressMap[currentStep]);
   }, [currentStep]);
 
   const handleNext = () => {
-    switch (currentStep) {
-      case 'welcome':
-        setCurrentStep('settings-preview');
-        break;
-      case 'settings-preview':
-        setCurrentStep('expenses-preview');
-        break;
-      case 'expenses-preview':
-        setCurrentStep('complete');
-        break;
-      case 'complete':
-        onComplete?.();
-        router.push('/dashboard');
-        break;
+    if (currentStep === 'welcome') {
+      setCurrentStep('settings');
+    } else {
+      router.push('/settings');
     }
   };
 
-  const handleSkipToSettings = () => {
+  const handleGoToSettings = () => {
     router.push('/settings');
-  };
-
-  const handleSkipToExpenses = () => {
-    router.push('/expenses');
-  };
-
-  const handleSkipToDashboard = () => {
-    onComplete?.();
-    router.push('/dashboard');
   };
 
   return (
