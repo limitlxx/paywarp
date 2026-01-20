@@ -4,21 +4,28 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { TrendingUp, DollarSign, Percent, Activity } from "lucide-react"
 import { CurrencyDisplay } from "@/components/currency-display"
-import { useBuckets } from "@/hooks/use-buckets"
+import { useBucketBalances } from "@/hooks/use-bucket-balances"
 import { rwaIntegration } from "@/lib/rwa-integration"
 import { useEffect, useState } from "react"
 
 export function RWADashboard() {
-  const { getRWAStats } = useBuckets()
-  const [tvl, setTvl] = useState(0)
-  const [networkConfig, setNetworkConfig] = useState(rwaIntegration.getNetworkConfig())
+  const { 
+    buckets, 
+    totalRWAValue, 
+    isYieldPollingActive
+  } = useBucketBalances()
   
-  const rwaStats = getRWAStats()
+  const [tvl, setTvl] = useState(0)
+  const [networkConfig] = useState(rwaIntegration.getNetworkConfig())
 
   useEffect(() => {
     const updateTVL = async () => {
-      const totalValueLocked = await rwaIntegration.getTotalValueLocked()
-      setTvl(totalValueLocked)
+      try {
+        const totalValueLocked = await rwaIntegration.getTotalValueLocked()
+        setTvl(totalValueLocked)
+      } catch (error) {
+        console.error('Error updating TVL:', error)
+      }
     }
 
     updateTVL()
@@ -27,7 +34,19 @@ export function RWADashboard() {
     return () => clearInterval(interval)
   }, [])
 
-  if (!rwaStats.rwaEnabled) {
+  // Calculate RWA stats from real bucket data
+  const rwaStats = {
+    totalRWAValue,
+    totalYieldEarned: buckets.reduce((sum, bucket) => sum + (bucket.totalYieldEarned || 0), 0),
+    avgAPY: buckets.length > 0 
+      ? buckets.reduce((sum, bucket) => sum + (bucket.apy || 0), 0) / buckets.length 
+      : 0,
+    rwaEnabled: buckets.some(bucket => bucket.isYielding || (bucket.rwaTokenBalance ?? 0) > 0),
+    activeRWABuckets: buckets.filter(bucket => bucket.isYielding || (bucket.rwaTokenBalance ?? 0) > 0).length
+  }
+
+  // Don't show dashboard if no RWA activity
+  if (!rwaStats.rwaEnabled && totalRWAValue === 0) {
     return null
   }
 
@@ -45,7 +64,7 @@ export function RWADashboard() {
             <CurrencyDisplay amount={rwaStats.totalRWAValue} fromCurrency="USD" />
           </div>
           <p className="text-xs text-muted-foreground">
-            Across all yield-bearing buckets
+            Across {rwaStats.activeRWABuckets} yield-bearing buckets
           </p>
         </CardContent>
       </Card>
@@ -102,6 +121,11 @@ export function RWADashboard() {
             {networkConfig.isTestnet && (
               <Badge variant="secondary" className="text-xs">
                 Testnet
+              </Badge>
+            )}
+            {isYieldPollingActive && (
+              <Badge variant="outline" className="text-xs text-green-400 border-green-500/20">
+                Live
               </Badge>
             )}
           </div>

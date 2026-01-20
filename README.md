@@ -148,7 +148,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 - View transaction metrics and archetype
 - Share to Twitter!
 
-### Step 6: Monitor RWA Yields (NEW - 30 seconds)
+### Step 6: Monitor RWA Yields (30 seconds)
 - Check bucket cards for yield bubbles
 - View APY rates (4.5% - 10% range)
 - Watch compound interest grow over time

@@ -111,13 +111,15 @@ export function DashboardHeader() {
         </DropdownMenu>
 
         {/* Desktop Configure Splits Button */}
-        <Button
+        {/* <Button
           variant="outline"
           className="hidden lg:flex glass border-purple-500/20 h-9 items-center gap-2 text-foreground bg-transparent"
         >
+          <Link href="/history">
           <SlidersHorizontal className="w-4 h-4 text-purple-400" />
           <span className="text-sm">Configure Splits</span>
-        </Button>
+          </Link>
+        </Button> */}
       </div>
 
       {/* Desktop Actions */}

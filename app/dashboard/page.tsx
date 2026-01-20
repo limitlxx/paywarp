@@ -14,12 +14,9 @@ import {
   DollarSign,
   Wallet,
   Plus,
-  Share2,
   RefreshCw,
   Droplet,
-  Scan,
   Loader2,
-  CheckCircle2Icon,
 } from "lucide-react"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts"
 import Link from "next/link"
@@ -30,7 +27,9 @@ import { DepositModal } from "@/components/modals/deposit-modal"
 import { useTransactionHistory } from "@/hooks/use-transaction-history"
 import { useWrappedReports } from "@/hooks/use-wrapped-reports"
 import { useBucketBalances } from "@/hooks/use-bucket-balances"
+import { useRWAYieldData } from "@/hooks/use-rwa-yield-data"
 import { AuditTray } from "@/components/audit-tray"
+import { RWAYieldTest } from "@/components/rwa-yield-test"
 import { formatUnits } from "viem"
 
 // Preference storage utilities for wrapped redirect
@@ -46,9 +45,10 @@ export default function Dashboard() {
   const router = useRouter()
   const { address } = useAccount()
   const [isDepositOpen, setIsDepositOpen] = useState(false)
-  const { transactions, isLoading, refreshHistory, syncHistory, fromCache, error } = useTransactionHistory()
-  const { buckets, totalBalance, formattedTotalBalance, splitConfig, nonce, hasData: hasBucketData, refetch: refetchBuckets } = useBucketBalances()
+  const { transactions, isLoading, refreshHistory, error } = useTransactionHistory()
+  const { buckets, totalBalance, formattedTotalBalance, splitConfig, nonce, hasData: hasBucketData, totalRWAValue } = useBucketBalances()
   const { hasActivity } = useWrappedReports()
+  const { yieldSummary, bucketRWAData, isLoading: isRWALoading, refreshData: refreshRWAData } = useRWAYieldData()
   const [isRefreshing, setIsRefreshing] = useState(false)
 
   // Debug: Log bucket data
@@ -95,8 +95,11 @@ export default function Dashboard() {
       tx.timestamp >= thirtyDaysAgo
     )
 
-    // Use REAL bucket balance from contract (this is the actual on-chain balance)
-    const totalBalance = Number(formattedTotalBalance)
+    // Calculate TOTAL balance including USDC + RWA tokens + yield
+    const usdcBalance = Number(formattedTotalBalance)
+    const rwaTokenValue = totalRWAValue || 0
+    const yieldEarned = yieldSummary?.totalYieldEarned || 0
+    const totalBalance = usdcBalance + rwaTokenValue + yieldEarned
 
     // Calculate monthly inflow (deposits + splits)
     const monthlyInflow = recentTransactions.reduce((sum, tx) => {
@@ -116,17 +119,20 @@ export default function Dashboard() {
 
     // Calculate spendable balance from actual bucket data
     const spendableBucket = buckets.find(b => b.name === 'spendable')
-    const spendableBalance = spendableBucket ? Number(spendableBucket.formattedBalance) : totalBalance * 0.05
+    const spendableBalance = spendableBucket ? Number(spendableBucket.formattedBalance) : usdcBalance * 0.05
 
     return {
       totalBalance,
+      usdcBalance,
+      rwaTokenValue,
+      yieldEarned,
       monthlyInflow,
       monthlyOutflow,
       spendableBalance,
       transactionCount: allTxs.length,
       recentCount: recentTransactions.length
     }
-  }, [transactions, formattedTotalBalance, buckets])
+  }, [transactions, formattedTotalBalance, buckets, totalRWAValue, yieldSummary])
 
   // Generate chart data from last 7 days
   const chartData = useMemo(() => {
@@ -166,9 +172,17 @@ export default function Dashboard() {
     return data
   }, [transactions])
 
-  // Handle refresh - use API refresh
+  // Handle refresh - use API refresh and RWA data
   const handleRefresh = async () => {
-    await refreshHistory()
+    setIsRefreshing(true)
+    try {
+      await Promise.all([
+        refreshHistory(),
+        refreshRWAData()
+      ])
+    } finally {
+      setIsRefreshing(false)
+    }
   }
   
   return (
@@ -192,7 +206,6 @@ export default function Dashboard() {
                   ) : stats.transactionCount > 0 ? (
                     <span className="flex flex-wrap items-center gap-1">
                       <span>{stats.transactionCount} transactions</span>
-                      {fromCache && <span className="text-purple-400">• Cached data</span>}
                     </span>
                   ) : (
                     'Track your DeFi budgets and earnings'
@@ -216,9 +229,9 @@ export default function Dashboard() {
                   size="sm"
                   className="glass-card border-blue-500/30 text-blue-400 hover:bg-blue-500/10 gap-2 bg-transparent text-xs sm:text-sm h-8 sm:h-9"
                   onClick={handleRefresh}
-                  disabled={isLoading}
+                  disabled={isLoading || isRWALoading || isRefreshing}
                 >
-                  <RefreshCw className={`w-3 h-3 sm:w-4 sm:h-4 ${isLoading ? 'animate-spin' : ''}`} />
+                  <RefreshCw className={`w-3 h-3 sm:w-4 sm:h-4 ${(isLoading || isRWALoading || isRefreshing) ? 'animate-spin' : ''}`} />
                   <span className="hidden sm:inline">Refresh</span>
                 </Button>
                 {/* <Button
@@ -307,7 +320,7 @@ export default function Dashboard() {
             )}
 
           {/* Stats - Show when there are transactions OR bucket data, and no errors */}
-          {(isLoading || (stats.transactionCount > 0 && !error) || (hasBucketData && !error)) && (
+          {(isLoading || isRWALoading || (stats.transactionCount > 0 && !error) || (hasBucketData && !error)) && (
             <>
               {/* Summary Row */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -325,7 +338,12 @@ export default function Dashboard() {
                       `$${stats.totalBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                     )}
                   </p>
-                </div>
+                  {!isLoading && stats.totalBalance > stats.usdcBalance && (
+                    <p className="text-xs text-green-400 mt-1">
+                      ${stats.usdcBalance.toLocaleString('en-US', { maximumFractionDigits: 2 })} USDC + ${(stats.rwaTokenValue + stats.yieldEarned).toLocaleString('en-US', { maximumFractionDigits: 2 })} RWA + Yield
+                    </p>
+                  )}
+                </div> 
               </CardContent>
             </Card>
             <Card className="glass-card border-purple-500/20">
@@ -473,8 +491,21 @@ export default function Dashboard() {
                   <TrendingUp className="w-4 h-4 text-purple-400" />
                   <p className="text-xs text-muted-foreground">Total Yield</p>
                 </div>
-                <p className="text-2xl font-bold text-foreground">$2,145.30</p>
-                <p className="text-xs text-green-400 mt-1">+12.5% this month</p>
+                <p className="text-2xl font-bold text-foreground">
+                  {isRWALoading ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : yieldSummary ? (
+                    `$${yieldSummary.totalYieldEarned.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                  ) : (
+                    '$0.00'
+                  )}
+                </p>
+                <p className="text-xs text-green-400 mt-1">
+                  {yieldSummary && yieldSummary.monthlyYieldProjection > 0 
+                    ? `+$${yieldSummary.monthlyYieldProjection.toFixed(2)} projected this month`
+                    : 'No yield data yet'
+                  }
+                </p>
               </CardContent>
             </Card>
             <Card className="glass-card border-purple-500/20">
@@ -483,8 +514,21 @@ export default function Dashboard() {
                   <DollarSign className="w-4 h-4 text-purple-400" />
                   <p className="text-xs text-muted-foreground">Avg APY</p>
                 </div>
-                <p className="text-2xl font-bold text-foreground">8.4%</p>
-                <p className="text-xs text-muted-foreground mt-1">Across all buckets</p>
+                <p className="text-2xl font-bold text-foreground">
+                  {isRWALoading ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : yieldSummary ? (
+                    `${yieldSummary.averageAPY.toFixed(1)}%`
+                  ) : (
+                    '0.0%'
+                  )}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {yieldSummary && yieldSummary.totalCurrentValue > 0 
+                    ? `Across $${yieldSummary.totalCurrentValue.toLocaleString('en-US', { maximumFractionDigits: 0 })} in RWA tokens`
+                    : 'No RWA positions yet'
+                  }
+                </p>
               </CardContent>
             </Card>
           </div>
@@ -503,6 +547,9 @@ export default function Dashboard() {
 
           {/* Audit Tray */}
           <AuditTray />
+
+          {/* RWA Yield Test Component */}
+          {/* <RWAYieldTest /> */}
         </div>
       </main>
 

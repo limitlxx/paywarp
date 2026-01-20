@@ -106,9 +106,26 @@ export default function BucketsPage() {
       const totalBal = Number(formattedTotalBalance)
       const percentage = totalBal > 0 ? Math.round((balance / totalBal) * 100) : 0
       
-      // Enhanced RWA data calculation
+      // Enhanced RWA data calculation based on bucket type
       const yieldBalance = Number(bucket.formattedYield)
       const hasRWATokens = bucket.isYielding && yieldBalance > 0
+      
+      // Get RWA token balances from the bucket data
+      const usdyBalance = bucket.usdyBalance?.tokenAmount || 0
+      const musdBalance = bucket.musdBalance?.tokenAmount || 0
+      const usdeBalance = bucket.usdeBalance?.tokenAmount || 0
+      const methBalance = bucket.methBalance?.tokenAmount || 0
+      
+      // Calculate total RWA yield and value
+      const totalRWAYield = (bucket.usdyBalance?.yieldEarned || 0) + 
+                           (bucket.musdBalance?.yieldEarned || 0) +
+                           (bucket.usdeBalance?.yieldEarned || 0) +
+                           (bucket.methBalance?.yieldEarned || 0)
+      
+      const totalRWAValue = (bucket.usdyBalance?.currentValue || 0) + 
+                           (bucket.musdBalance?.currentValue || 0) +
+                           (bucket.usdeBalance?.currentValue || 0) +
+                           (bucket.methBalance?.currentValue || 0)
       
       return {
         id: bucket.name as "billings" | "savings" | "growth" | "instant" | "spendable",
@@ -121,11 +138,13 @@ export default function BucketsPage() {
         description: bucketDescriptions[bucket.name as keyof typeof bucketDescriptions],
         apy: bucket.isYielding ? getBucketAPY(bucket.name) : undefined,
         lastUpdated: new Date(),
-        // Enhanced RWA props
-        usdyBalance: hasRWATokens && bucket.name === 'billings' ? yieldBalance : 0,
-        musdBalance: hasRWATokens && bucket.name === 'savings' ? yieldBalance : 0,
-        totalYieldEarned: hasRWATokens ? yieldBalance * 0.1 : 0, // Estimate 10% of balance as yield
-        currentRWAValue: hasRWATokens ? yieldBalance * 1.05 : 0, // Estimate 5% premium
+        // Enhanced RWA props based on bucket type
+        usdyBalance: usdyBalance,
+        musdBalance: musdBalance,
+        usdeBalance: usdeBalance,
+        methBalance: methBalance,
+        totalYieldEarned: totalRWAYield || (hasRWATokens ? (bucket.totalYieldEarned || yieldBalance * 0.1) : 0),
+        currentRWAValue: totalRWAValue || (hasRWATokens ? (bucket.usdyBalance?.currentValue || bucket.musdBalance?.currentValue || yieldBalance * 1.05) : 0),
         enableRealTimeYields: true, // Enable real-time yield polling
       }
     })

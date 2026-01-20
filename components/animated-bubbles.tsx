@@ -41,7 +41,7 @@ export function YieldBubbles({ active = false, type = "default", color }: YieldB
       type === "lightning" ? 600 : type === "expense" ? 800 : 400,
     )
     return () => clearInterval(interval)
-  }, [active, type])
+  }, [active, type]) // Fixed dependency array
 
   // <CHANGE> Custom animation variants for different bubble types
   const getAnimationVariant = () => {

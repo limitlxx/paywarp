@@ -74,6 +74,8 @@ export interface BucketBalance {
   totalYieldEarned?: number;
   usdyBalance?: RWABalance;
   musdBalance?: RWABalance;
+  usdeBalance?: RWABalance;
+  methBalance?: RWABalance;
   rwaLastUpdated?: Date;
   rwaError?: string;
 }
@@ -112,7 +114,7 @@ export function useBucketBalances(): BucketBalancesReturn {
   
   // RWA-specific state
   const [yieldData, setYieldData] = useState<BucketYields | null>(null);
-  const [rwaBalances, setRwaBalances] = useState<Record<string, { usdy?: RWABalance; musd?: RWABalance }>>({});
+  const [rwaBalances, setRwaBalances] = useState<Record<string, { usdy?: RWABalance; musd?: RWABalance; usde?: RWABalance; meth?: RWABalance }>>({});
   const [rwaErrors, setRwaErrors] = useState<Record<string, string>>({});
   const [isRWALoading, setIsRWALoading] = useState(false);
   
@@ -186,21 +188,23 @@ export function useBucketBalances(): BucketBalancesReturn {
     if (!address || !yieldData) return;
 
     setIsRWALoading(true);
-    const newRwaBalances: Record<string, { usdy?: RWABalance; musd?: RWABalance }> = {};
+    const newRwaBalances: Record<string, { usdy?: RWABalance; musd?: RWABalance; usde?: RWABalance; meth?: RWABalance }> = {};
     const newRwaErrors: Record<string, string> = {};
 
-    // Only fetch for RWA-enabled buckets (excluding spendable)
+    // Fetch RWA balances for each bucket type
     const rwaBuckets: BucketType[] = ['billings', 'savings', 'growth', 'instant'];
 
     for (const bucketType of rwaBuckets) {
       try {
-        // Fetch USDY and mUSD balances in parallel
-        const [usdyResult, musdResult] = await Promise.allSettled([
+        // Fetch all RWA token balances in parallel
+        const [usdyResult, musdResult, usdeResult, methResult] = await Promise.allSettled([
           rwaIntegration.getUSDYBalance(bucketType),
-          rwaIntegration.getMUSDBalance(bucketType)
+          rwaIntegration.getMUSDBalance(bucketType),
+          rwaIntegration.getUSDEBalance(bucketType),
+          rwaIntegration.getMETHBalance(bucketType)
         ]);
 
-        const bucketBalances: { usdy?: RWABalance; musd?: RWABalance } = {};
+        const bucketBalances: { usdy?: RWABalance; musd?: RWABalance; usde?: RWABalance; meth?: RWABalance } = {};
 
         if (usdyResult.status === 'fulfilled') {
           bucketBalances.usdy = usdyResult.value;
@@ -212,6 +216,18 @@ export function useBucketBalances(): BucketBalancesReturn {
           bucketBalances.musd = musdResult.value;
         } else {
           console.warn(`Failed to fetch mUSD balance for ${bucketType}:`, musdResult.reason);
+        }
+
+        if (usdeResult.status === 'fulfilled') {
+          bucketBalances.usde = usdeResult.value;
+        } else {
+          console.warn(`Failed to fetch USDe balance for ${bucketType}:`, usdeResult.reason);
+        }
+
+        if (methResult.status === 'fulfilled') {
+          bucketBalances.meth = methResult.value;
+        } else {
+          console.warn(`Failed to fetch mETH balance for ${bucketType}:`, methResult.reason);
         }
 
         newRwaBalances[bucketType] = bucketBalances;
@@ -295,15 +311,26 @@ export function useBucketBalances(): BucketBalancesReturn {
       const bucketYieldInfo = yieldData?.[name as keyof BucketYields];
       const bucketRwaBalances = rwaBalances[name];
       
-      // Calculate total RWA token balance
+      // Calculate total RWA token balance from all RWA tokens
       const usdyTokenBalance = bucketRwaBalances?.usdy?.tokenAmount || 0;
       const musdTokenBalance = bucketRwaBalances?.musd?.tokenAmount || 0;
-      const totalRwaTokenBalance = usdyTokenBalance + musdTokenBalance;
+      const usdeTokenBalance = bucketRwaBalances?.usde?.tokenAmount || 0;
+      const methTokenBalance = bucketRwaBalances?.meth?.tokenAmount || 0;
+      const totalRwaTokenBalance = usdyTokenBalance + musdTokenBalance + usdeTokenBalance + methTokenBalance;
 
-      // Calculate total yield earned from RWA
+      // Calculate total yield earned from all RWA tokens
       const usdyYieldEarned = bucketRwaBalances?.usdy?.yieldEarned || 0;
       const musdYieldEarned = bucketRwaBalances?.musd?.yieldEarned || 0;
-      const totalRwaYieldEarned = usdyYieldEarned + musdYieldEarned;
+      const usdeYieldEarned = bucketRwaBalances?.usde?.yieldEarned || 0;
+      const methYieldEarned = bucketRwaBalances?.meth?.yieldEarned || 0;
+      const totalRwaYieldEarned = usdyYieldEarned + musdYieldEarned + usdeYieldEarned + methYieldEarned;
+
+      // Calculate total current value from all RWA tokens
+      const usdyCurrentValue = bucketRwaBalances?.usdy?.currentValue || 0;
+      const musdCurrentValue = bucketRwaBalances?.musd?.currentValue || 0;
+      const usdeCurrentValue = bucketRwaBalances?.usde?.currentValue || 0;
+      const methCurrentValue = bucketRwaBalances?.meth?.currentValue || 0;
+      const totalRwaCurrentValue = usdyCurrentValue + musdCurrentValue + usdeCurrentValue + methCurrentValue;
 
       return {
         name,
@@ -320,6 +347,8 @@ export function useBucketBalances(): BucketBalancesReturn {
         totalYieldEarned: totalRwaYieldEarned,
         usdyBalance: bucketRwaBalances?.usdy,
         musdBalance: bucketRwaBalances?.musd,
+        usdeBalance: bucketRwaBalances?.usde,
+        methBalance: bucketRwaBalances?.meth,
         rwaLastUpdated: bucketYieldInfo?.lastUpdated,
         rwaError: rwaErrors[name],
       };
@@ -339,9 +368,13 @@ export function useBucketBalances(): BucketBalancesReturn {
     return buckets.reduce((sum, bucket) => {
       const usdyValue = bucket.usdyBalance?.currentValue || 0;
       const musdValue = bucket.musdBalance?.currentValue || 0;
-      return sum + usdyValue + musdValue;
+      // Add other RWA token values from rwaBalances
+      const bucketRwaBalances = rwaBalances[bucket.name];
+      const usdeValue = bucketRwaBalances?.usde?.currentValue || 0;
+      const methValue = bucketRwaBalances?.meth?.currentValue || 0;
+      return sum + usdyValue + musdValue + usdeValue + methValue;
     }, 0);
-  }, [buckets]);
+  }, [buckets, rwaBalances]);
 
   // Calculate total pending yield across all buckets
   const totalPendingYield = useMemo(() => {

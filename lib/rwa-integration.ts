@@ -1,18 +1,21 @@
 /**
- * RWA Integration Service for Ondo Finance USDY and mUSD tokens
+ * RWA Integration Service for Mock RWA tokens (USDY, mUSD, USDe, mETH)
  * Handles token conversion, yield tracking, and balance management
  */
 
 import type { BucketType, Currency } from './types'
 import { rwaErrorHandler, withRWAFallback, getUserFriendlyError } from './rwa-error-handler'
+import { createPublicClient, http, formatUnits, parseUnits } from 'viem'
+import { mantleSepolia } from './networks'
 
 export interface RWATokenData {
   address: string
-  symbol: 'USDY' | 'mUSD'
+  symbol: 'USDY' | 'mUSD' | 'USDe' | 'mETH'
   decimals: number
   currentAPY: number
   redemptionValue: number // Current redemption value (increases over time for yield)
   lastUpdated: Date
+  bucketType: BucketType
 }
 
 export interface YieldData {
@@ -53,242 +56,274 @@ export class RWAIntegration {
   private tokenContracts: Map<string, RWATokenData>
   private yieldCache: Map<string, YieldData>
   private isTestnet: boolean
+  private publicClient: any
+  
+  // Rate limiting and caching
+  private requestQueue: Array<() => Promise<any>> = []
+  private isProcessingQueue = false
+  private lastRequestTime = 0
+  private readonly MIN_REQUEST_INTERVAL = 200 // 200ms between requests
+  private balanceCache = new Map<string, { data: RWABalance; timestamp: number }>()
+  private readonly CACHE_DURATION = 30000 // 30 seconds cache
+
+  // RWA Contract ABI for reading data
+  private readonly RWA_ABI = [
+    {
+      inputs: [],
+      name: 'getAPY',
+      outputs: [{ name: '', type: 'uint256' }],
+      stateMutability: 'view',
+      type: 'function'
+    },
+    {
+      inputs: [{ name: 'account', type: 'address' }],
+      name: 'balanceOf',
+      outputs: [{ name: '', type: 'uint256' }],
+      stateMutability: 'view',
+      type: 'function'
+    },
+    {
+      inputs: [{ name: 'user', type: 'address' }],
+      name: 'getCurrentValue',
+      outputs: [{ name: '', type: 'uint256' }],
+      stateMutability: 'view',
+      type: 'function'
+    },
+    {
+      inputs: [{ name: 'user', type: 'address' }],
+      name: 'getPendingYield',
+      outputs: [{ name: '', type: 'uint256' }],
+      stateMutability: 'view',
+      type: 'function'
+    },
+    {
+      inputs: [{ name: 'user', type: 'address' }],
+      name: 'getYieldEarned',
+      outputs: [{ name: '', type: 'uint256' }],
+      stateMutability: 'view',
+      type: 'function'
+    }
+  ] as const
 
   constructor(network: 'mainnet' | 'sepolia' = 'sepolia') {
     this.network = network
     this.isTestnet = network === 'sepolia'
     this.tokenContracts = new Map()
     this.yieldCache = new Map()
+    
+    // Initialize public client for reading contract data
+    this.publicClient = createPublicClient({
+      chain: mantleSepolia,
+      transport: http()
+    })
+    
     this.initializeTokenContracts()
+  }
+
+  /**
+   * Rate limiting for RPC requests
+   */
+  private async queueRequest<T>(request: () => Promise<T>): Promise<T> {
+    return new Promise((resolve, reject) => {
+      this.requestQueue.push(async () => {
+        try {
+          const result = await request()
+          resolve(result)
+        } catch (error) {
+          reject(error)
+        }
+      })
+      
+      this.processQueue()
+    })
+  }
+
+  private async processQueue() {
+    if (this.isProcessingQueue || this.requestQueue.length === 0) {
+      return
+    }
+
+    this.isProcessingQueue = true
+
+    while (this.requestQueue.length > 0) {
+      const now = Date.now()
+      const timeSinceLastRequest = now - this.lastRequestTime
+
+      if (timeSinceLastRequest < this.MIN_REQUEST_INTERVAL) {
+        await new Promise(resolve => setTimeout(resolve, this.MIN_REQUEST_INTERVAL - timeSinceLastRequest))
+      }
+
+      const request = this.requestQueue.shift()
+      if (request) {
+        this.lastRequestTime = Date.now()
+        await request()
+      }
+    }
+
+    this.isProcessingQueue = false
+  }
+
+  /**
+   * Get cached balance or fetch new one
+   */
+  private getCachedBalance(cacheKey: string): RWABalance | null {
+    const cached = this.balanceCache.get(cacheKey)
+    if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {
+      return cached.data
+    }
+    return null
+  }
+
+  /**
+   * Set balance cache
+   */
+  private setCachedBalance(cacheKey: string, data: RWABalance) {
+    this.balanceCache.set(cacheKey, {
+      data,
+      timestamp: Date.now()
+    })
   }
 
   private initializeTokenContracts() {
     if (this.isTestnet) {
-      // Mock contracts for testnet
+      // Real deployed mock contracts for testnet
       this.tokenContracts.set('USDY', {
-        address: process.env.NEXT_PUBLIC_USDY_TOKEN_SEPOLIA || '0x201EBa5CC46D216Ce6DC03F6a759e8E766e956aE',
+        address: process.env.NEXT_PUBLIC_MOCK_USDY_SEPOLIA || '0xD83794CFD929612509Ac42e0E9Ab00CB764966c3',
         symbol: 'USDY',
         decimals: 18,
-        currentAPY: 4.5, // Mock APY for testing
-        redemptionValue: 1.045, // Mock redemption value
-        lastUpdated: new Date()
+        currentAPY: 4.5,
+        redemptionValue: 1.045,
+        lastUpdated: new Date(),
+        bucketType: 'billings'
       })
 
       this.tokenContracts.set('mUSD', {
-        address: process.env.NEXT_PUBLIC_MUSD_TOKEN_SEPOLIA || '0x0000000000000000000000000000000000000002',
+        address: process.env.NEXT_PUBLIC_MOCK_MUSD_SEPOLIA || '0xE396D5a59AbaFE26a7a256f453735872593f1c03',
         symbol: 'mUSD',
         decimals: 18,
-        currentAPY: 3.2, // Mock APY for testing
-        redemptionValue: 1.032, // Mock redemption value
-        lastUpdated: new Date()
+        currentAPY: 3.2,
+        redemptionValue: 1.032,
+        lastUpdated: new Date(),
+        bucketType: 'savings'
+      })
+
+      this.tokenContracts.set('USDe', {
+        address: process.env.NEXT_PUBLIC_MOCK_USDE_SEPOLIA || '0xDCf439790840C5bf66916997dB54cD15083773f0',
+        symbol: 'USDe',
+        decimals: 18,
+        currentAPY: 8.0,
+        redemptionValue: 1.08,
+        lastUpdated: new Date(),
+        bucketType: 'growth'
+      })
+
+      this.tokenContracts.set('mETH', {
+        address: process.env.NEXT_PUBLIC_MOCK_METH_SEPOLIA || '0xcB1E04273dce35C8e58239B5BF46fB8d1fEDa5F8',
+        symbol: 'mETH',
+        decimals: 18,
+        currentAPY: 10.0,
+        redemptionValue: 1.10,
+        lastUpdated: new Date(),
+        bucketType: 'instant'
       })
     } else {
-      // Real contracts for mainnet
+      // Real contracts for mainnet (when available)
       this.tokenContracts.set('USDY', {
         address: process.env.NEXT_PUBLIC_USDY_TOKEN_MAINNET || '0x09Bc4E0D864854c6aFB6eB9A9cdF58aC190D0dF9',
         symbol: 'USDY',
         decimals: 18,
-        currentAPY: 4.5, // Will be fetched from Ondo contracts
-        redemptionValue: 1.0, // Will be fetched from Ondo contracts
-        lastUpdated: new Date()
+        currentAPY: 4.5,
+        redemptionValue: 1.0,
+        lastUpdated: new Date(),
+        bucketType: 'billings'
       })
 
       this.tokenContracts.set('mUSD', {
         address: process.env.NEXT_PUBLIC_MUSD_TOKEN_MAINNET || '0x5bEaBAEBB3146685Dd74176f68a0721F91297D37',
         symbol: 'mUSD',
         decimals: 18,
-        currentAPY: 3.2, // Will be fetched from Ondo contracts
-        redemptionValue: 1.0, // Will be fetched from Ondo contracts
-        lastUpdated: new Date()
+        currentAPY: 3.2,
+        redemptionValue: 1.0,
+        lastUpdated: new Date(),
+        bucketType: 'savings'
       })
     }
-  }
-
-  /**
-   * Convert USDC to USDY tokens for yield generation
-   */
-  async convertToUSDY(amount: number, bucket: BucketType): Promise<ConversionResult> {
-    const operationKey = `convertToUSDY-${bucket}`
-    
-    return withRWAFallback(
-      async () => {
-        if (amount <= 0) {
-          throw new Error('Amount must be positive')
-        }
-
-        const usdyToken = this.tokenContracts.get('USDY')
-        if (!usdyToken) {
-          throw new Error('USDY token not configured')
-        }
-
-        if (this.isTestnet) {
-          // Mock conversion for testnet
-          const tokenAmount = amount / usdyToken.redemptionValue
-          return {
-            success: true,
-            transactionHash: `0x${Math.random().toString(16).substr(2, 64)}`,
-            tokenAmount,
-            gasUsed: 150000
-          }
-        }
-
-        // Real conversion logic would go here for mainnet
-        // This would interact with Ondo Finance contracts
-        throw new Error('Mainnet conversion not implemented yet')
-      },
-      async () => {
-        // Fallback: return USDC operation result
-        console.warn(`[RWAIntegration] USDY conversion failed, falling back to USDC for bucket ${bucket}`)
-        return {
-          success: true,
-          transactionHash: `0x${Math.random().toString(16).substr(2, 64)}`,
-          tokenAmount: amount, // Keep as USDC
-          gasUsed: 21000
-        }
-      },
-      operationKey
-    ).catch(error => ({
-      success: false,
-      error: getUserFriendlyError(error)
-    }))
-  }
-
-  /**
-   * Convert USDC to mUSD tokens for yield generation
-   */
-  async convertToMUSD(amount: number, bucket: BucketType): Promise<ConversionResult> {
-    const operationKey = `convertToMUSD-${bucket}`
-    
-    return withRWAFallback(
-      async () => {
-        if (amount <= 0) {
-          throw new Error('Amount must be positive')
-        }
-
-        const musdToken = this.tokenContracts.get('mUSD')
-        if (!musdToken) {
-          throw new Error('mUSD token not configured')
-        }
-
-        if (this.isTestnet) {
-          // Mock conversion for testnet
-          const tokenAmount = amount / musdToken.redemptionValue
-          return {
-            success: true,
-            transactionHash: `0x${Math.random().toString(16).substr(2, 64)}`,
-            tokenAmount,
-            gasUsed: 150000
-          }
-        }
-
-        // Real conversion logic would go here for mainnet
-        throw new Error('Mainnet conversion not implemented yet')
-      },
-      async () => {
-        // Fallback: return USDC operation result
-        console.warn(`[RWAIntegration] mUSD conversion failed, falling back to USDC for bucket ${bucket}`)
-        return {
-          success: true,
-          transactionHash: `0x${Math.random().toString(16).substr(2, 64)}`,
-          tokenAmount: amount, // Keep as USDC
-          gasUsed: 21000
-        }
-      },
-      operationKey
-    ).catch(error => ({
-      success: false,
-      error: getUserFriendlyError(error)
-    }))
-  }
-
-  /**
-   * Get current yield data for a bucket
-   */
-  async getCurrentYield(bucket: BucketType): Promise<YieldData> {
-    const operationKey = `getCurrentYield-${bucket}`
-    
-    return withRWAFallback(
-      async () => {
-        const cacheKey = `${bucket}-${this.network}`
-        
-        // Check cache first
-        const cached = this.yieldCache.get(cacheKey)
-        if (cached && this.isCacheValid(cached.lastAccrualTime)) {
-          return cached
-        }
-
-        // Generate yield data based on bucket type and network
-        const yieldData = this.generateYieldData(bucket)
-        this.yieldCache.set(cacheKey, yieldData)
-        
-        return yieldData
-      },
-      async () => {
-        // Fallback: return basic yield data
-        console.warn(`[RWAIntegration] Yield data fetch failed, returning fallback data for bucket ${bucket}`)
-        return {
-          currentAPY: 0,
-          totalYieldEarned: 0,
-          yieldToday: 0,
-          projectedYearlyYield: 0,
-          lastAccrualTime: new Date()
-        }
-      },
-      operationKey
-    )
-  }
-
-  /**
-   * Get historical yield data for a bucket
-   */
-  async getHistoricalYield(bucket: BucketType, period: 'day' | 'week' | 'month' | 'year'): Promise<YieldHistory> {
-    const currentYield = await this.getCurrentYield(bucket)
-    const dataPoints = this.getDataPointsForPeriod(period)
-    
-    const data = Array.from({ length: dataPoints }, (_, i) => {
-      const daysAgo = i * this.getDaysPerDataPoint(period)
-      const timestamp = new Date(Date.now() - daysAgo * 24 * 60 * 60 * 1000)
-      
-      // Simulate historical data with some variance
-      const apyVariance = (Math.random() - 0.5) * 0.5 // ±0.25% variance
-      const apy = Math.max(0.1, currentYield.currentAPY + apyVariance)
-      
-      return {
-        timestamp,
-        apy,
-        yieldEarned: (apy / 365) * (dataPoints - i), // Cumulative yield
-        balance: 1000 + (Math.random() * 500) // Mock balance
-      }
-    }).reverse()
-
-    return { period, data }
   }
 
   /**
    * Get USDY balance for a bucket
    */
   async getUSDYBalance(bucket: BucketType): Promise<RWABalance> {
+    const cacheKey = `USDY-${bucket}`
+    const cached = this.getCachedBalance(cacheKey)
+    if (cached) {
+      return cached
+    }
+
     const usdyToken = this.tokenContracts.get('USDY')
-    if (!usdyToken) {
-      throw new Error('USDY token not configured')
+    if (!usdyToken || usdyToken.bucketType !== bucket) {
+      const zeroBalance = {
+        usdcAmount: 0,
+        tokenAmount: 0,
+        currentValue: 0,
+        yieldEarned: 0
+      }
+      this.setCachedBalance(cacheKey, zeroBalance)
+      return zeroBalance
     }
 
     if (this.isTestnet) {
-      // Mock balance for testnet
-      const tokenAmount = Math.random() * 1000
-      const currentValue = tokenAmount * usdyToken.redemptionValue
-      const originalValue = tokenAmount * 1.0 // Assume original redemption was 1.0
-      const yieldEarned = currentValue - originalValue
+      try {
+        const bucketVaultAddress = process.env.NEXT_PUBLIC_BUCKET_VAULT_SEPOLIA as `0x${string}`
+        
+        const [tokenBalance, currentValue, yieldEarned] = await Promise.all([
+          this.queueRequest(() => this.publicClient.readContract({
+            address: usdyToken.address as `0x${string}`,
+            abi: this.RWA_ABI,
+            functionName: 'balanceOf',
+            args: [bucketVaultAddress]
+          })),
+          this.queueRequest(() => this.publicClient.readContract({
+            address: usdyToken.address as `0x${string}`,
+            abi: this.RWA_ABI,
+            functionName: 'getCurrentValue',
+            args: [bucketVaultAddress]
+          })),
+          this.queueRequest(() => this.publicClient.readContract({
+            address: usdyToken.address as `0x${string}`,
+            abi: this.RWA_ABI,
+            functionName: 'getYieldEarned',
+            args: [bucketVaultAddress]
+          }))
+        ])
 
-      return {
-        usdcAmount: originalValue,
-        tokenAmount,
-        currentValue,
-        yieldEarned
+        const tokenAmount = Number(formatUnits(tokenBalance as bigint, 18))
+        const currentValueUSD = Number(formatUnits(currentValue as bigint, 6))
+        const yieldEarnedUSD = Number(formatUnits(yieldEarned as bigint, 6))
+        const originalUSDC = currentValueUSD - yieldEarnedUSD
+
+        const result = {
+          usdcAmount: originalUSDC,
+          tokenAmount,
+          currentValue: currentValueUSD,
+          yieldEarned: yieldEarnedUSD
+        }
+
+        this.setCachedBalance(cacheKey, result)
+        return result
+      } catch (error) {
+        console.error('Error fetching USDY balance from contract:', error)
+        const fallbackBalance = {
+          usdcAmount: 0,
+          tokenAmount: 0,
+          currentValue: 0,
+          yieldEarned: 0
+        }
+        this.setCachedBalance(cacheKey, fallbackBalance)
+        return fallbackBalance
       }
     }
 
-    // Real balance fetching would go here for mainnet
     throw new Error('Mainnet balance fetching not implemented yet')
   }
 
@@ -296,111 +331,231 @@ export class RWAIntegration {
    * Get mUSD balance for a bucket
    */
   async getMUSDBalance(bucket: BucketType): Promise<RWABalance> {
+    const cacheKey = `mUSD-${bucket}`
+    const cached = this.getCachedBalance(cacheKey)
+    if (cached) {
+      return cached
+    }
+
     const musdToken = this.tokenContracts.get('mUSD')
-    if (!musdToken) {
-      throw new Error('mUSD token not configured')
+    if (!musdToken || musdToken.bucketType !== bucket) {
+      const zeroBalance = {
+        usdcAmount: 0,
+        tokenAmount: 0,
+        currentValue: 0,
+        yieldEarned: 0
+      }
+      this.setCachedBalance(cacheKey, zeroBalance)
+      return zeroBalance
     }
 
     if (this.isTestnet) {
-      // Mock balance for testnet
-      const tokenAmount = Math.random() * 1000
-      const currentValue = tokenAmount * musdToken.redemptionValue
-      const originalValue = tokenAmount * 1.0 // Assume original redemption was 1.0
-      const yieldEarned = currentValue - originalValue
+      try {
+        const bucketVaultAddress = process.env.NEXT_PUBLIC_BUCKET_VAULT_SEPOLIA as `0x${string}`
+        
+        const [tokenBalance, currentValue, yieldEarned] = await Promise.all([
+          this.queueRequest(() => this.publicClient.readContract({
+            address: musdToken.address as `0x${string}`,
+            abi: this.RWA_ABI,
+            functionName: 'balanceOf',
+            args: [bucketVaultAddress]
+          })),
+          this.queueRequest(() => this.publicClient.readContract({
+            address: musdToken.address as `0x${string}`,
+            abi: this.RWA_ABI,
+            functionName: 'getCurrentValue',
+            args: [bucketVaultAddress]
+          })),
+          this.queueRequest(() => this.publicClient.readContract({
+            address: musdToken.address as `0x${string}`,
+            abi: this.RWA_ABI,
+            functionName: 'getYieldEarned',
+            args: [bucketVaultAddress]
+          }))
+        ])
 
-      return {
-        usdcAmount: originalValue,
-        tokenAmount,
-        currentValue,
-        yieldEarned
+        const tokenAmount = Number(formatUnits(tokenBalance as bigint, 18))
+        const currentValueUSD = Number(formatUnits(currentValue as bigint, 6))
+        const yieldEarnedUSD = Number(formatUnits(yieldEarned as bigint, 6))
+        const originalUSDC = currentValueUSD - yieldEarnedUSD
+
+        const result = {
+          usdcAmount: originalUSDC,
+          tokenAmount,
+          currentValue: currentValueUSD,
+          yieldEarned: yieldEarnedUSD
+        }
+
+        this.setCachedBalance(cacheKey, result)
+        return result
+      } catch (error) {
+        console.error('Error fetching mUSD balance from contract:', error)
+        const fallbackBalance = {
+          usdcAmount: 0,
+          tokenAmount: 0,
+          currentValue: 0,
+          yieldEarned: 0
+        }
+        this.setCachedBalance(cacheKey, fallbackBalance)
+        return fallbackBalance
       }
     }
 
-    // Real balance fetching would go here for mainnet
     throw new Error('Mainnet balance fetching not implemented yet')
   }
 
   /**
-   * Redeem USDY tokens back to USDC
+   * Get USDe balance for a bucket
    */
-  async redeemUSDY(amount: number, bucket: BucketType): Promise<ConversionResult> {
-    try {
-      if (amount <= 0) {
-        return { success: false, error: 'Amount must be positive' }
-      }
-
-      const usdyToken = this.tokenContracts.get('USDY')
-      if (!usdyToken) {
-        return { success: false, error: 'USDY token not configured' }
-      }
-
-      if (this.isTestnet) {
-        // Mock redemption for testnet
-        const usdcAmount = amount * usdyToken.redemptionValue
-        return {
-          success: true,
-          transactionHash: `0x${Math.random().toString(16).substr(2, 64)}`,
-          tokenAmount: usdcAmount,
-          gasUsed: 120000
-        }
-      }
-
-      // Real redemption logic would go here for mainnet
-      throw new Error('Mainnet redemption not implemented yet')
-
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error'
-      }
+  async getUSDEBalance(bucket: BucketType): Promise<RWABalance> {
+    const cacheKey = `USDe-${bucket}`
+    const cached = this.getCachedBalance(cacheKey)
+    if (cached) {
+      return cached
     }
-  }
 
-  /**
-   * Update redemption values (simulates yield accrual)
-   */
-  updateRedemptionValues() {
+    const usdeToken = this.tokenContracts.get('USDe')
+    if (!usdeToken || usdeToken.bucketType !== bucket) {
+      const zeroBalance = {
+        usdcAmount: 0,
+        tokenAmount: 0,
+        currentValue: 0,
+        yieldEarned: 0
+      }
+      this.setCachedBalance(cacheKey, zeroBalance)
+      return zeroBalance
+    }
+
     if (this.isTestnet) {
-      // Simulate yield accrual by increasing redemption values
-      const usdyToken = this.tokenContracts.get('USDY')
-      const musdToken = this.tokenContracts.get('mUSD')
+      try {
+        const bucketVaultAddress = process.env.NEXT_PUBLIC_BUCKET_VAULT_SEPOLIA as `0x${string}`
+        
+        const [tokenBalance, currentValue, yieldEarned] = await Promise.all([
+          this.queueRequest(() => this.publicClient.readContract({
+            address: usdeToken.address as `0x${string}`,
+            abi: this.RWA_ABI,
+            functionName: 'balanceOf',
+            args: [bucketVaultAddress]
+          })),
+          this.queueRequest(() => this.publicClient.readContract({
+            address: usdeToken.address as `0x${string}`,
+            abi: this.RWA_ABI,
+            functionName: 'getCurrentValue',
+            args: [bucketVaultAddress]
+          })),
+          this.queueRequest(() => this.publicClient.readContract({
+            address: usdeToken.address as `0x${string}`,
+            abi: this.RWA_ABI,
+            functionName: 'getYieldEarned',
+            args: [bucketVaultAddress]
+          }))
+        ])
 
-      if (usdyToken) {
-        const dailyYield = usdyToken.currentAPY / 365 / 100
-        usdyToken.redemptionValue *= (1 + dailyYield)
-        usdyToken.lastUpdated = new Date()
-      }
+        const tokenAmount = Number(formatUnits(tokenBalance as bigint, 18))
+        const currentValueUSD = Number(formatUnits(currentValue as bigint, 6))
+        const yieldEarnedUSD = Number(formatUnits(yieldEarned as bigint, 6))
+        const originalUSDC = currentValueUSD - yieldEarnedUSD
 
-      if (musdToken) {
-        const dailyYield = musdToken.currentAPY / 365 / 100
-        musdToken.redemptionValue *= (1 + dailyYield)
-        musdToken.lastUpdated = new Date()
+        const result = {
+          usdcAmount: originalUSDC,
+          tokenAmount,
+          currentValue: currentValueUSD,
+          yieldEarned: yieldEarnedUSD
+        }
+
+        this.setCachedBalance(cacheKey, result)
+        return result
+      } catch (error) {
+        console.error('Error fetching USDe balance from contract:', error)
+        const fallbackBalance = {
+          usdcAmount: 0,
+          tokenAmount: 0,
+          currentValue: 0,
+          yieldEarned: 0
+        }
+        this.setCachedBalance(cacheKey, fallbackBalance)
+        return fallbackBalance
       }
     }
+
+    throw new Error('Mainnet balance fetching not implemented yet')
   }
 
   /**
-   * Calculate projected yield for a given amount and time period
+   * Get mETH balance for a bucket
    */
-  calculateProjectedYield(amount: number, tokenType: 'USDY' | 'mUSD', days: number): number {
-    const token = this.tokenContracts.get(tokenType)
-    if (!token) return 0
+  async getMETHBalance(bucket: BucketType): Promise<RWABalance> {
+    const cacheKey = `mETH-${bucket}`
+    const cached = this.getCachedBalance(cacheKey)
+    if (cached) {
+      return cached
+    }
 
-    const dailyRate = token.currentAPY / 365 / 100
-    const compoundedValue = amount * Math.pow(1 + dailyRate, days)
-    return compoundedValue - amount
-  }
+    const methToken = this.tokenContracts.get('mETH')
+    if (!methToken || methToken.bucketType !== bucket) {
+      const zeroBalance = {
+        usdcAmount: 0,
+        tokenAmount: 0,
+        currentValue: 0,
+        yieldEarned: 0
+      }
+      this.setCachedBalance(cacheKey, zeroBalance)
+      return zeroBalance
+    }
 
-  /**
-   * Get real-time APY for display purposes
-   */
-  getRealTimeAPY(tokenType: 'USDY' | 'mUSD'): number {
-    const token = this.tokenContracts.get(tokenType)
-    if (!token) return 0
+    if (this.isTestnet) {
+      try {
+        const bucketVaultAddress = process.env.NEXT_PUBLIC_BUCKET_VAULT_SEPOLIA as `0x${string}`
+        
+        const [tokenBalance, currentValue, yieldEarned] = await Promise.all([
+          this.queueRequest(() => this.publicClient.readContract({
+            address: methToken.address as `0x${string}`,
+            abi: this.RWA_ABI,
+            functionName: 'balanceOf',
+            args: [bucketVaultAddress]
+          })),
+          this.queueRequest(() => this.publicClient.readContract({
+            address: methToken.address as `0x${string}`,
+            abi: this.RWA_ABI,
+            functionName: 'getCurrentValue',
+            args: [bucketVaultAddress]
+          })),
+          this.queueRequest(() => this.publicClient.readContract({
+            address: methToken.address as `0x${string}`,
+            abi: this.RWA_ABI,
+            functionName: 'getYieldEarned',
+            args: [bucketVaultAddress]
+          }))
+        ])
 
-    // Add small random variance to simulate real-time changes
-    const variance = (Math.random() - 0.5) * 0.1 // ±0.05% variance
-    return Math.max(0.1, token.currentAPY + variance)
+        const tokenAmount = Number(formatUnits(tokenBalance as bigint, 18))
+        const currentValueUSD = Number(formatUnits(currentValue as bigint, 6))
+        const yieldEarnedUSD = Number(formatUnits(yieldEarned as bigint, 6))
+        const originalUSDC = currentValueUSD - yieldEarnedUSD
+
+        const result = {
+          usdcAmount: originalUSDC,
+          tokenAmount,
+          currentValue: currentValueUSD,
+          yieldEarned: yieldEarnedUSD
+        }
+
+        this.setCachedBalance(cacheKey, result)
+        return result
+      } catch (error) {
+        console.error('Error fetching mETH balance from contract:', error)
+        const fallbackBalance = {
+          usdcAmount: 0,
+          tokenAmount: 0,
+          currentValue: 0,
+          yieldEarned: 0
+        }
+        this.setCachedBalance(cacheKey, fallbackBalance)
+        return fallbackBalance
+      }
+    }
+
+    throw new Error('Mainnet balance fetching not implemented yet')
   }
 
   /**
@@ -408,24 +563,14 @@ export class RWAIntegration {
    */
   async getTotalValueLocked(): Promise<number> {
     try {
-      // In testnet, return mock TVL
       if (this.isTestnet) {
         return Math.random() * 10000000 + 5000000 // $5M - $15M mock TVL
       }
-
-      // In mainnet, this would query actual contract data
       return 0
     } catch (error) {
       console.error('Failed to get TVL:', error)
       return 0
     }
-  }
-
-  /**
-   * Check if network supports RWA integration
-   */
-  isRWASupported(): boolean {
-    return this.tokenContracts.size > 0
   }
 
   /**
@@ -436,66 +581,8 @@ export class RWAIntegration {
       network: this.network,
       isTestnet: this.isTestnet,
       supportedTokens: Array.from(this.tokenContracts.keys()),
-      rwaSupported: this.isRWASupported()
+      rwaSupported: this.tokenContracts.size > 0
     }
-  }
-
-  /**
-   * Get token contract data
-   */
-  getTokenData(symbol: 'USDY' | 'mUSD'): RWATokenData | undefined {
-    return this.tokenContracts.get(symbol)
-  }
-
-  // Private helper methods
-  private generateYieldData(bucket: BucketType): YieldData {
-    const baseAPY = this.getBaseAPYForBucket(bucket)
-    const variance = (Math.random() - 0.5) * 0.5 // ±0.25% variance
-    const currentAPY = Math.max(0.1, baseAPY + variance)
-
-    return {
-      currentAPY,
-      totalYieldEarned: Math.random() * 100, // Mock total yield
-      yieldToday: (currentAPY / 365) * (Math.random() * 10), // Mock daily yield
-      projectedYearlyYield: currentAPY * (Math.random() * 1000), // Mock projection
-      lastAccrualTime: new Date()
-    }
-  }
-
-  private getBaseAPYForBucket(bucket: BucketType): number {
-    const apyMap: Record<BucketType, number> = {
-      billings: 2.5,
-      savings: 4.5,
-      growth: 12.8,
-      instant: 2.5,
-      spendable: 1.0
-    }
-    return apyMap[bucket] || 2.0
-  }
-
-  private isCacheValid(lastUpdate: Date): boolean {
-    const cacheValidityMs = 5 * 60 * 1000 // 5 minutes
-    return Date.now() - lastUpdate.getTime() < cacheValidityMs
-  }
-
-  private getDataPointsForPeriod(period: 'day' | 'week' | 'month' | 'year'): number {
-    const pointsMap = {
-      day: 24, // Hourly data
-      week: 7, // Daily data
-      month: 30, // Daily data
-      year: 12 // Monthly data
-    }
-    return pointsMap[period]
-  }
-
-  private getDaysPerDataPoint(period: 'day' | 'week' | 'month' | 'year'): number {
-    const daysMap = {
-      day: 1/24, // Hourly
-      week: 1, // Daily
-      month: 1, // Daily
-      year: 30 // Monthly
-    }
-    return daysMap[period]
   }
 }
 

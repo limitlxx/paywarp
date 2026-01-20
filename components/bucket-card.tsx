@@ -35,6 +35,8 @@ interface BucketCardProps {
   // RWA-specific props
   usdyBalance?: number
   musdBalance?: number
+  usdeBalance?: number
+  methBalance?: number
   totalYieldEarned?: number
   currentRWAValue?: number
   // Real-time yield updates
@@ -57,6 +59,8 @@ export function BucketCard({
   onRefresh,
   usdyBalance = 0,
   musdBalance = 0,
+  usdeBalance = 0,
+  methBalance = 0,
   totalYieldEarned = 0,
   currentRWAValue = 0,
   enableRealTimeYields = true,
@@ -80,7 +84,7 @@ export function BucketCard({
   const effectiveAPY = bucketYieldData?.apy || apy || 0
   const effectiveIsYielding = bucketYieldData?.isYielding || isYielding || false
   const effectivePendingYield = bucketYieldData?.pending || 0
-  const effectiveTokenBalance = bucketYieldData?.tokenBalance || (usdyBalance + musdBalance)
+  const effectiveTokenBalance = bucketYieldData?.tokenBalance || (usdyBalance + musdBalance + usdeBalance + methBalance)
   const effectiveTotalYieldEarned = bucketYieldData?.totalYieldEarned || totalYieldEarned
   const effectiveCurrentRWAValue = currentRWAValue || (effectiveTokenBalance * 1.0) // Approximate value
   
@@ -278,33 +282,32 @@ export function BucketCard({
                       </div>
                     </div>
                     
-                    {/* Token Balances */}
-                    {usdyBalance > 0 && (
+                    {/* Token Balances based on bucket type */}
+                    {id === 'billings' && usdyBalance > 0 && (
                       <div className="flex justify-between text-xs">
                         <span className="text-muted-foreground">USDY:</span>
                         <span className="font-mono text-foreground">{usdyBalance.toFixed(4)}</span>
                       </div>
                     )}
                     
-                    {musdBalance > 0 && (
+                    {id === 'savings' && musdBalance > 0 && (
                       <div className="flex justify-between text-xs">
                         <span className="text-muted-foreground">mUSD:</span>
                         <span className="font-mono text-foreground">{musdBalance.toFixed(4)}</span>
                       </div>
                     )}
 
-                    {/* Additional RWA tokens based on bucket type */}
-                    {id === 'growth' && effectiveTokenBalance > 0 && (
+                    {id === 'growth' && usdeBalance > 0 && (
                       <div className="flex justify-between text-xs">
                         <span className="text-muted-foreground">USDe:</span>
-                        <span className="font-mono text-foreground">{(effectiveTokenBalance * 0.6).toFixed(4)}</span>
+                        <span className="font-mono text-foreground">{usdeBalance.toFixed(4)}</span>
                       </div>
                     )}
 
-                    {id === 'instant' && effectiveTokenBalance > 0 && (
+                    {id === 'instant' && methBalance > 0 && (
                       <div className="flex justify-between text-xs">
                         <span className="text-muted-foreground">mETH:</span>
-                        <span className="font-mono text-foreground">{(effectiveTokenBalance * 0.4).toFixed(4)}</span>
+                        <span className="font-mono text-foreground">{methBalance.toFixed(4)}</span>
                       </div>
                     )}
                     

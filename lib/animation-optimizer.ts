@@ -331,7 +331,7 @@ export function useOptimizedAnimation(
     }
 
     return canStart
-  }, [animationId, defaultConfig])
+  }, [animationId, JSON.stringify(defaultConfig)])
 
   const stopAnimation = useCallback(() => {
     const animationManager = getAnimationManager()
@@ -480,7 +480,8 @@ export function useAnimationPerformanceMonitoring() {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      setMetrics(getAnimationManager().getPerformanceMetrics())
+      const newMetrics = getAnimationManager().getPerformanceMetrics()
+      setMetrics(newMetrics)
     }, 1000)
 
     return () => clearInterval(interval)
