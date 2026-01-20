@@ -60,57 +60,62 @@ const bucketConfig = {
   billings: { 
     id: 'billings',
     name: "Billings", 
-    color: "#A100FF", 
+    color: "#EF4444", 
     icon: Droplet, 
-    isYielding: false,
+    isYielding: true,
     description: "Automated expenses & bills",
-    rwaProvider: "Ondo",
-    rwaType: "Receivables",
-    targetYield: "2.4%"
+    rwaProvider: "Ondo Finance",
+    rwaType: "USDY (US Dollar Yield)",
+    rwaTokenAddress: "0xD83794CFD929612509Ac42e0E9Ab00CB764966c3",
+    targetYield: "4.5%"
   },
   savings: {
     id: 'savings',
     name: "Savings",
-    color: "#6366F1",
+    color: "#3B82F6",
     icon: PiggyBank,
     isYielding: true,
     description: "Long-term goal oriented funds",
-    rwaProvider: "Ondo",
-    rwaType: "Tokenized T-Bills",
-    targetYield: "4.5%"
+    rwaProvider: "Mountain Protocol",
+    rwaType: "mUSD (Mountain USD)",
+    rwaTokenAddress: "0xE396D5a59AbaFE26a7a256f453735872593f1c03",
+    targetYield: "3.2%"
   },
   growth: {
     id: 'growth',
     name: "Growth",
-    color: "#3B82F6",
+    color: "#EAB308",
     icon: TrendingUp,
     isYielding: true,
     description: "DeFi yield optimization",
-    rwaProvider: "Ondo",
-    rwaType: "Equity Vaults",
-    targetYield: "12.8%"
+    rwaProvider: "Ethena Labs",
+    rwaType: "USDe (Synthetic Dollar)",
+    rwaTokenAddress: "0xDCf439790840C5bf66916997dB54cD15083773f0",
+    targetYield: "8.0%"
   },
   instant: { 
     id: 'instant',
     name: "Instant", 
-    color: "#F59E0B", 
+    color: "#22C55E", 
     icon: Zap, 
-    isYielding: false,
+    isYielding: true,
     description: "Team payroll & salaries",
-    rwaProvider: "Mantle",
-    rwaType: "Payroll Yields",
-    targetYield: "3.2%"
+    rwaProvider: "Mantle LST",
+    rwaType: "mETH (Mantle Staked ETH)",
+    rwaTokenAddress: "0xcB1E04273dce35C8e58239B5BF46fB8d1fEDa5F8",
+    targetYield: "10.0%"
   },
   spendable: { 
     id: 'spendable',
     name: "Spendable", 
-    color: "#10B981", 
+    color: "#94A3B8", 
     icon: Wallet, 
     isYielding: false,
     description: "Available for immediate use",
-    rwaProvider: "Mantle",
-    rwaType: "Native Yield",
-    targetYield: "1.8%"
+    rwaProvider: "Native USDC",
+    rwaType: "USDC (Circle USD Coin)",
+    rwaTokenAddress: "0x93B3e03e9Ca401Ca79150C406a74430F1ff70EA8",
+    targetYield: "0.0%"
   },
 }
 
@@ -164,20 +169,56 @@ export default function BucketDetails() {
       return {
         balance: 0,
         formattedBalance: "0.00",
+        usdcBalance: 0,
+        rwaValue: 0,
+        totalYieldEarned: 0,
         percentage: 0,
         isYielding: bucket.isYielding
       }
     }
 
-    // Calculate percentage based on total balance
-    const totalBalance = buckets.reduce((sum, b) => sum + Number(b.formattedBalance), 0)
-    const percentage = totalBalance > 0 ? (Number(contractBucket.formattedBalance) / totalBalance) * 100 : 0
+    // Calculate RWA token values
+    const usdyValue = contractBucket.usdyBalance?.currentValue || 0
+    const musdValue = contractBucket.musdBalance?.currentValue || 0
+    const usdeValue = contractBucket.usdeBalance?.currentValue || 0
+    const methValue = contractBucket.methBalance?.currentValue || 0
+    const totalRWAValue = usdyValue + musdValue + usdeValue + methValue
+
+    // Calculate total yield earned
+    const usdyYield = contractBucket.usdyBalance?.yieldEarned || 0
+    const musdYield = contractBucket.musdBalance?.yieldEarned || 0
+    const usdeYield = contractBucket.usdeBalance?.yieldEarned || 0
+    const methYield = contractBucket.methBalance?.yieldEarned || 0
+    const totalYieldEarned = usdyYield + musdYield + usdeYield + methYield
+
+    // Total balance = USDC + RWA value + yield
+    const usdcBalance = Number(contractBucket.formattedBalance)
+    const totalBalance = usdcBalance + totalRWAValue + totalYieldEarned
+
+    // Calculate percentage based on total balance across all buckets
+    const totalPortfolioValue = buckets.reduce((sum, b) => {
+      const bUsdcBalance = Number(b.formattedBalance)
+      const bRwaValue = (b.usdyBalance?.currentValue || 0) + 
+                       (b.musdBalance?.currentValue || 0) + 
+                       (b.usdeBalance?.currentValue || 0) + 
+                       (b.methBalance?.currentValue || 0)
+      const bYieldEarned = (b.usdyBalance?.yieldEarned || 0) + 
+                          (b.musdBalance?.yieldEarned || 0) + 
+                          (b.usdeBalance?.yieldEarned || 0) + 
+                          (b.methBalance?.yieldEarned || 0)
+      return sum + bUsdcBalance + bRwaValue + bYieldEarned
+    }, 0)
+    
+    const percentage = totalPortfolioValue > 0 ? (totalBalance / totalPortfolioValue) * 100 : 0
 
     return {
-      balance: Number(contractBucket.formattedBalance),
-      formattedBalance: contractBucket.formattedBalance,
+      balance: totalBalance,
+      formattedBalance: totalBalance.toFixed(2),
+      usdcBalance: usdcBalance,
+      rwaValue: totalRWAValue,
+      totalYieldEarned: totalYieldEarned,
       percentage: Math.min(percentage, 100),
-      isYielding: contractBucket.isYielding
+      isYielding: contractBucket.isYielding || bucket.isYielding
     }
   }, [buckets, id, bucket.isYielding])
 
@@ -373,9 +414,9 @@ export default function BucketDetails() {
                   <div className="flex items-center gap-2 mt-1">
                     <Badge variant="outline" className="glass border-green-500/20 text-green-400 gap-1 px-2">
                       <ShieldCheck className="w-3 h-3" />
-                      {bucket.rwaProvider} {bucket.rwaType}
+                      {bucket.rwaProvider}
                     </Badge>
-                    <p className="text-xs text-muted-foreground">Active RWA connection</p>
+                    <p className="text-xs text-muted-foreground">{bucket.rwaType}</p>
                   </div>
                 </div>
               </div>
@@ -383,8 +424,19 @@ export default function BucketDetails() {
 
             <div className="flex items-center gap-3">
               <div className="text-right hidden sm:block">
-                <p className="text-sm text-muted-foreground uppercase tracking-wider">Current Balance</p>
+                <p className="text-sm text-muted-foreground uppercase tracking-wider">Total Balance</p>
                 <p className="text-3xl font-bold text-foreground">${realBucketData.formattedBalance}</p>
+                {realBucketData.balance > realBucketData.usdcBalance && (
+                  <div className="text-xs text-muted-foreground mt-1 space-y-0.5">
+                    <p>${realBucketData.usdcBalance.toFixed(2)} USDC</p>
+                    {realBucketData.rwaValue > 0 && (
+                      <p className="text-green-400">+${realBucketData.rwaValue.toFixed(2)} RWA</p>
+                    )}
+                    {realBucketData.totalYieldEarned > 0 && (
+                      <p className="text-green-400">+${realBucketData.totalYieldEarned.toFixed(2)} Yield</p>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="flex flex-col gap-2">
                 <Button
@@ -449,8 +501,9 @@ export default function BucketDetails() {
                 {/* Large Liquid Meter */}
                 <Card className="lg:col-span-2 glass-card border-purple-500/20 overflow-hidden relative min-h-[400px]">
                   <YieldBubbles
-                    active={bucket.isYielding || id === "billings" || id === "instant"}
-                    type={id === "billings" ? "expense" : id === "growth" ? "compounding" : "default"}
+                    active={bucket.isYielding}
+                    type={id === "billings" ? "expense" : id === "growth" ? "compounding" : id === "instant" ? "lightning" : id === "savings" ? "milestone" : "default"}
+                    color={bucket.color}
                   />
                   <CardHeader>
                     <div className="flex justify-between items-start">
@@ -508,9 +561,7 @@ export default function BucketDetails() {
                     <CardContent className="space-y-3">
                       <div className="flex justify-between items-center text-sm">
                         <span className="text-muted-foreground">Provider</span>
-                        <span className="text-foreground font-medium flex items-center gap-1">
-                          {bucket.rwaProvider} <ExternalLink className="w-3 h-3 opacity-50" />
-                        </span>
+                        <span className="text-foreground font-medium">{bucket.rwaProvider}</span>
                       </div>
                       <div className="flex justify-between items-center text-sm">
                         <span className="text-muted-foreground">Asset Type</span>
@@ -520,6 +571,31 @@ export default function BucketDetails() {
                         <span className="text-muted-foreground">Target Yield</span>
                         <span className="text-green-400 font-bold">{bucket.targetYield} APY</span>
                       </div>
+                      <div className="flex justify-between items-center text-sm">
+                        <span className="text-muted-foreground">Token Contract</span>
+                        <a 
+                          href={`https://sepolia.mantlescan.xyz/address/${bucket.rwaTokenAddress}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-purple-400 hover:text-purple-300 font-medium flex items-center gap-1 transition-colors"
+                        >
+                          View on Explorer <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+                      {realBucketData.rwaValue > 0 && (
+                        <div className="border-t border-border/30 pt-3 space-y-2">
+                          <div className="flex justify-between items-center text-sm">
+                            <span className="text-muted-foreground">RWA Value</span>
+                            <span className="text-green-400 font-bold">${realBucketData.rwaValue.toFixed(2)}</span>
+                          </div>
+                          {realBucketData.totalYieldEarned > 0 && (
+                            <div className="flex justify-between items-center text-sm">
+                              <span className="text-muted-foreground">Yield Earned</span>
+                              <span className="text-green-400 font-bold">+${realBucketData.totalYieldEarned.toFixed(2)}</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
 

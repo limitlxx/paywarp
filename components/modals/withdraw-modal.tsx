@@ -42,9 +42,39 @@ export function WithdrawModal({ open, onOpenChange, bucketId, bucketName }: With
   const publicClient = usePublicClient()
   const [isWithdrawing, setIsWithdrawing] = useState(false)
 
-  // Get bucket data from real contract data
+  // Get bucket data from real contract data with RWA calculations
   const bucket = buckets.find(b => b.name === bucketId)
   const isSpendable = bucketId === "spendable"
+
+  // Calculate total withdrawable balance including RWA and yield
+  const withdrawableBalance = bucket ? (() => {
+    const usdcBalance = Number(bucket.formattedBalance)
+    
+    // Calculate RWA token values
+    const usdyValue = bucket.usdyBalance?.currentValue || 0
+    const musdValue = bucket.musdBalance?.currentValue || 0
+    const usdeValue = bucket.usdeBalance?.currentValue || 0
+    const methValue = bucket.methBalance?.currentValue || 0
+    const totalRWAValue = usdyValue + musdValue + usdeValue + methValue
+
+    // Calculate total yield earned
+    const usdyYield = bucket.usdyBalance?.yieldEarned || 0
+    const musdYield = bucket.musdBalance?.yieldEarned || 0
+    const usdeYield = bucket.usdeBalance?.yieldEarned || 0
+    const methYield = bucket.methBalance?.yieldEarned || 0
+    const totalYieldEarned = usdyYield + musdYield + usdeYield + methYield
+
+    // Total withdrawable = USDC + RWA value + yield
+    const totalBalance = usdcBalance + totalRWAValue + totalYieldEarned
+
+    return {
+      total: totalBalance,
+      usdc: usdcBalance,
+      rwa: totalRWAValue,
+      yield: totalYieldEarned,
+      formatted: totalBalance.toFixed(2)
+    }
+  })() : { total: 0, usdc: 0, rwa: 0, yield: 0, formatted: "0.00" }
 
   const handleWithdraw = async () => {
     if (!isConnected) {
@@ -78,7 +108,7 @@ export function WithdrawModal({ open, onOpenChange, bucketId, bucketName }: With
       return
     }
 
-    if (!bucket || Number(amount) > Number(bucket.formattedBalance)) {
+    if (!bucket || Number(amount) > withdrawableBalance.total) {
       toast({
         title: "Insufficient Balance",
         description: "Withdrawal amount exceeds available balance.",
@@ -96,7 +126,10 @@ export function WithdrawModal({ open, onOpenChange, bucketId, bucketName }: With
       console.log('💸 Initiating withdrawal:', { 
         bucketId, 
         amount: numAmount,
-        balance: bucket.formattedBalance,
+        totalBalance: withdrawableBalance.total,
+        usdcBalance: withdrawableBalance.usdc,
+        rwaValue: withdrawableBalance.rwa,
+        yieldEarned: withdrawableBalance.yield,
       })
       
       // Contract expects 6 decimals for USDC
@@ -174,10 +207,22 @@ export function WithdrawModal({ open, onOpenChange, bucketId, bucketName }: With
                   <Label htmlFor="withdraw-amount" className="text-indigo-300 font-bold">
                     Amount to Withdraw
                   </Label>
-                  <span className="text-xs text-muted-foreground">
-                    Available:{" "}
-                    <span className="text-foreground font-mono font-bold">${bucket?.formattedBalance || "0.00"}</span>
-                  </span>
+                  <div className="text-right text-xs">
+                    <div className="text-foreground font-mono font-bold">
+                      Total: ${withdrawableBalance.formatted}
+                    </div>
+                    {withdrawableBalance.total > withdrawableBalance.usdc && (
+                      <div className="text-muted-foreground space-y-0.5 mt-1">
+                        <div>${withdrawableBalance.usdc.toFixed(2)} USDC</div>
+                        {withdrawableBalance.rwa > 0 && (
+                          <div className="text-green-400">+${withdrawableBalance.rwa.toFixed(2)} RWA</div>
+                        )}
+                        {withdrawableBalance.yield > 0 && (
+                          <div className="text-green-400">+${withdrawableBalance.yield.toFixed(2)} Yield</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div className="relative">
                   <span className="absolute left-3 top-1/2 -translate-y-1/2 text-2xl font-bold text-muted-foreground">
@@ -189,18 +234,43 @@ export function WithdrawModal({ open, onOpenChange, bucketId, bucketName }: With
                     value={amount}
                     onChange={(e) => setAmount(e.target.value)}
                     placeholder="0.00"
+                    max={withdrawableBalance.total}
                     className="pl-8 text-3xl h-16 glass border-indigo-500/30 focus:border-indigo-500 font-bold bg-transparent"
                   />
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setAmount(withdrawableBalance.formatted)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 hover:bg-indigo-500/20 text-indigo-400 font-bold"
+                  >
+                    MAX
+                  </Button>
                 </div>
               </div>
 
               {!isSpendable && (
                 <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 flex gap-3">
                   <AlertCircle className="w-5 h-5 text-amber-400 shrink-0" />
+                  <div className="text-xs text-muted-foreground leading-relaxed space-y-1">
+                    <p>
+                      Withdrawals from <span className="text-amber-300 font-bold uppercase">{bucketName}</span> are routed
+                      through your <span className="text-green-300 font-bold uppercase">Spendable</span> bucket for
+                      compliance tracking.
+                    </p>
+                    {withdrawableBalance.rwa > 0 && (
+                      <p className="text-blue-300">
+                        RWA tokens will be automatically redeemed to USDC during withdrawal.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {isSpendable && withdrawableBalance.rwa > 0 && (
+                <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20 flex gap-3">
+                  <AlertCircle className="w-5 h-5 text-blue-400 shrink-0" />
                   <p className="text-xs text-muted-foreground leading-relaxed">
-                    Withdrawals from <span className="text-amber-300 font-bold uppercase">{bucketName}</span> are routed
-                    through your <span className="text-green-300 font-bold uppercase">Spendable</span> bucket for
-                    compliance tracking.
+                    Any RWA tokens in your spendable bucket will be redeemed to USDC before withdrawal.
                   </p>
                 </div>
               )}
@@ -246,7 +316,7 @@ export function WithdrawModal({ open, onOpenChange, bucketId, bucketName }: With
         {step === "amount" && (
           <DialogFooter>
             <Button
-              disabled={!amount || Number(amount) <= 0 || Number(amount) > Number(bucket?.formattedBalance || 0) || isWithdrawing}
+              disabled={!amount || Number(amount) <= 0 || Number(amount) > withdrawableBalance.total || isWithdrawing}
               onClick={handleWithdraw}
               className="w-full bg-indigo-600 hover:bg-indigo-500 text-white h-12 text-lg font-bold flex gap-2"
             >
