@@ -42,9 +42,7 @@ NEXT_PUBLIC_BUCKET_VAULT_SEPOLIA=0x5eB859EC3E38B6F7713e3d7504D08Cb8D50f3825
 NEXT_PUBLIC_PAYROLL_ENGINE_SEPOLIA=0x918e725B7922129627C7FeFd4D64D6ee9b3dBFF4
 NEXT_PUBLIC_USER_REGISTRY_SEPOLIA=0x28d4C8100F199BDa17c62948790aFDBaa8e33C0A
 NEXT_PUBLIC_EXPENSE_TRACKER_SEPOLIA=0x23cbfeeE878DfDA122881A68F0e555B97B8F8FFD
-NEXT_PUBLIC_USDC_TOKEN_SEPOLIA=0x93B3e03e9Ca401Ca79150C406a74430F1ff70EA8
-NEXT_PUBLIC_USDY_TOKEN_SEPOLIA=0xCE6C8F97241f455A3498711C28D468A50559673f
-NEXT_PUBLIC_MUSD_TOKEN_SEPOLIA=0xA61F1287B3aC96D7B6ab75e6190DEcaad68Ad641
+NEXT_PUBLIC_USDC_TOKEN_SEPOLIA=0x93B3e03e9Ca401Ca79150C406a74430F1ff70EA8 
 
 # RWA Mock Contracts - Sepolia Testnet (UPDATED)
 NEXT_PUBLIC_MOCK_USDY_SEPOLIA=0xD83794CFD929612509Ac42e0E9Ab00CB764966c3
@@ -136,7 +134,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 - Enter amount (e.g., 100 USDC)
 - Approve transaction
 - Watch funds auto-split across buckets!
-- **NEW**: See RWA yield generation in real-time!
+- See RWA yield generation in real-time!
 
 ### Step 4: Track an Expense (60 seconds)
 - Navigate to "Expenses" page
@@ -157,8 +155,6 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 - Claim or compound yields as needed
 
 ---
-
-## 🆕 Latest Updates (January 2026)
 
 ### RWA Yield Integration ✨
 
@@ -405,15 +401,11 @@ npm run test test/rwa-round-trip-consistency.property.test.ts --run
 
 ### Community
 
-- **Discord**: [Join our server](https://discord.gg/paywarp)
-- **Telegram**: [@paywarp](https://t.me/paywarp)
-- **Twitter/X**: [@paywarp](https://twitter.com/paywarp)
+- **Twitter/X**: [@paywarp](https://x.com/paywarp)
 
 ### Support
 
-- **Email**: support@paywarp.io
-- **GitHub Issues**: [Report a bug](https://github.com/yourusername/paywarp/issues)
-- **Documentation**: [docs.paywarp.io](https://docs.paywarp.io)
+- **Email**: paywarp@gmail.com
 
 ---
 
@@ -423,7 +415,7 @@ npm run test test/rwa-round-trip-consistency.property.test.ts --run
 
 ```bash
 # Clone and start developing
-git clone https://github.com/yourusername/paywarp.git
+git clone https://github.com/limitlxx/paywarp.git
 cd paywarp
 npm install
 npm run dev
