@@ -1,15 +1,22 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 /**
- * @title MockMUSD
+ * @title MockMUSDUpgradeable
  * @dev Mock implementation of Ondo Finance mUSD token for testnet development
  * Simulates yield generation through redemption value increases
  */
-contract MockMUSD is ERC20, Ownable {
+contract MockMUSDUpgradeable is 
+    Initializable,
+    ERC20Upgradeable, 
+    OwnableUpgradeable,
+    UUPSUpgradeable
+{
     uint256 public redemptionValue; // Current redemption value (starts at 1e18, increases over time)
     uint256 public currentAPY; // Current APY in basis points (e.g., 320 = 3.2%)
     uint256 public lastAccrualTime;
@@ -19,16 +26,42 @@ contract MockMUSD is ERC20, Ownable {
     event YieldAccrued(uint256 newRedemptionValue, uint256 apy);
     event Deposit(address indexed user, uint256 usdcAmount, uint256 musdAmount);
     event Redemption(address indexed user, uint256 musdAmount, uint256 usdcAmount);
+    event YieldClaimed(address indexed user, uint256 tokenAmount, uint256 usdcAmount);
+    event YieldCompounded(address indexed user, uint256 usdcAmount);
 
-    constructor(
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    /**
+     * @dev Initialize the contract
+     * @param name Token name
+     * @param symbol Token symbol
+     * @param initialAPY Initial APY in basis points
+     * @param owner Contract owner
+     */
+    function initialize(
         string memory name,
         string memory symbol,
-        uint256 initialAPY
-    ) ERC20(name, symbol) Ownable(msg.sender) {
+        uint256 initialAPY,
+        address owner
+    ) public initializer {
+        require(owner != address(0), "Invalid owner");
+        
+        __ERC20_init(name, symbol);
+        __Ownable_init(owner);
+        __UUPSUpgradeable_init();
+        
         redemptionValue = 1e18; // Start at 1:1 ratio
         currentAPY = initialAPY;
         lastAccrualTime = block.timestamp;
     }
+
+    /**
+     * @dev Required by UUPSUpgradeable
+     */
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
     /**
      * @dev Deposit USDC and mint mUSD tokens
@@ -131,6 +164,89 @@ contract MockMUSD is ERC20, Ownable {
      */
     function getAPY() external view returns (uint256 apy) {
         return currentAPY;
+    }
+
+    /**
+     * @dev Get pending yield for a user (view function that simulates accrual)
+     * @param user Address to check pending yield for
+     * @return pendingYield Amount of pending yield in USDC terms
+     */
+    function getPendingYield(address user) external view returns (uint256 pendingYield) {
+        // Calculate what the redemption value would be if we accrued now
+        uint256 timeElapsed = block.timestamp - lastAccrualTime;
+        uint256 simulatedRedemptionValue = redemptionValue;
+        
+        if (timeElapsed > 0) {
+            uint256 yieldRate = (currentAPY * timeElapsed) / (10000 * 365 * 24 * 3600);
+            simulatedRedemptionValue = redemptionValue + (redemptionValue * yieldRate) / 1e18;
+        }
+        
+        // Calculate current value with simulated redemption value
+        uint256 currentValue = (balanceOf(user) * simulatedRedemptionValue) / 1e18;
+        uint256 originalValue = originalDeposits[user];
+        
+        if (currentValue > originalValue) {
+            pendingYield = currentValue - originalValue;
+        }
+    }
+
+    /**
+     * @dev Claim accrued yield as additional tokens
+     * @return yieldClaimed Amount of yield claimed in token terms
+     */
+    function claimYield() external returns (uint256 yieldClaimed) {
+        require(balanceOf(msg.sender) > 0, "No tokens to claim yield for");
+        
+        // Accrue yield before claiming
+        accrueYield();
+        
+        // Calculate yield earned
+        uint256 currentValue = (balanceOf(msg.sender) * redemptionValue) / 1e18;
+        uint256 originalValue = originalDeposits[msg.sender];
+        
+        if (currentValue > originalValue) {
+            uint256 yieldInUSDC = currentValue - originalValue;
+            
+            // Convert yield to tokens at current redemption value
+            yieldClaimed = (yieldInUSDC * 1e18) / redemptionValue;
+            
+            if (yieldClaimed > 0) {
+                // Mint yield tokens to user
+                _mint(msg.sender, yieldClaimed);
+                
+                // Update original deposits to include claimed yield (for compounding)
+                originalDeposits[msg.sender] = currentValue;
+                
+                emit YieldClaimed(msg.sender, yieldClaimed, yieldInUSDC);
+            }
+        }
+    }
+
+    /**
+     * @dev Compound yield by reinvesting it (automatic compounding)
+     * @return yieldCompounded Amount of yield compounded in USDC terms
+     */
+    function compoundYield() external returns (uint256 yieldCompounded) {
+        require(balanceOf(msg.sender) > 0, "No tokens to compound yield for");
+        
+        // Accrue yield before compounding
+        accrueYield();
+        
+        // Calculate yield earned
+        uint256 currentValue = (balanceOf(msg.sender) * redemptionValue) / 1e18;
+        uint256 originalValue = originalDeposits[msg.sender];
+        
+        if (currentValue > originalValue) {
+            yieldCompounded = currentValue - originalValue;
+            
+            if (yieldCompounded > 0) {
+                // Update original deposits to include compounded yield
+                // This increases the principal for future yield calculations
+                originalDeposits[msg.sender] = currentValue;
+                
+                emit YieldCompounded(msg.sender, yieldCompounded);
+            }
+        }
     }
 
     /**

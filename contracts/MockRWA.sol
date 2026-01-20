@@ -1,15 +1,22 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.19;
 
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 /**
- * @title MockRWA
+ * @title MockRWAUpgradeable
  * @dev Base contract for mock Real World Asset tokens with yield accrual logic
  * Provides common functionality for all RWA token implementations
  */
-abstract contract MockRWA is ERC20, Ownable {
+abstract contract MockRWAUpgradeable is 
+    Initializable,
+    ERC20Upgradeable, 
+    OwnableUpgradeable,
+    UUPSUpgradeable
+{
     uint256 public redemptionValue; // Current redemption value (starts at 1e18, increases over time)
     uint256 public currentAPY; // Current APY in basis points (e.g., 800 = 8%)
     uint256 public lastAccrualTime;
@@ -19,16 +26,51 @@ abstract contract MockRWA is ERC20, Ownable {
     event YieldAccrued(uint256 newRedemptionValue, uint256 apy);
     event Deposit(address indexed user, uint256 usdcAmount, uint256 tokenAmount);
     event Redemption(address indexed user, uint256 tokenAmount, uint256 usdcAmount);
+    event YieldClaimed(address indexed user, uint256 tokenAmount, uint256 usdcAmount);
+    event YieldCompounded(address indexed user, uint256 usdcAmount);
 
-    constructor(
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    /**
+     * @dev Initialize the contract
+     * @param name Token name
+     * @param symbol Token symbol
+     * @param initialAPY Initial APY in basis points
+     * @param owner Contract owner
+     */
+    function __MockRWA_init(
         string memory name,
         string memory symbol,
-        uint256 initialAPY
-    ) ERC20(name, symbol) Ownable(msg.sender) {
+        uint256 initialAPY,
+        address owner
+    ) internal onlyInitializing {
+        __ERC20_init(name, symbol);
+        __Ownable_init(owner);
+        __UUPSUpgradeable_init();
+        
         redemptionValue = 1e18; // Start at 1:1 ratio
         currentAPY = initialAPY;
         lastAccrualTime = block.timestamp;
     }
+
+    /**
+     * @dev Initialize the contract (unchained)
+     */
+    function __MockRWA_init_unchained(
+        uint256 initialAPY
+    ) internal onlyInitializing {
+        redemptionValue = 1e18;
+        currentAPY = initialAPY;
+        lastAccrualTime = block.timestamp;
+    }
+
+    /**
+     * @dev Required by UUPSUpgradeable
+     */
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
     /**
      * @dev Deposit USDC and mint RWA tokens
@@ -155,6 +197,65 @@ abstract contract MockRWA is ERC20, Ownable {
      */
     function getAPY() external view returns (uint256 apy) {
         return currentAPY;
+    }
+
+    /**
+     * @dev Claim accrued yield as additional tokens
+     * @return yieldClaimed Amount of yield claimed in token terms
+     */
+    function claimYield() external virtual returns (uint256 yieldClaimed) {
+        require(balanceOf(msg.sender) > 0, "No tokens to claim yield for");
+        
+        // Accrue yield before claiming
+        accrueYield();
+        
+        // Calculate yield earned
+        uint256 currentValue = (balanceOf(msg.sender) * redemptionValue) / 1e18;
+        uint256 originalValue = originalDeposits[msg.sender];
+        
+        if (currentValue > originalValue) {
+            uint256 yieldInUSDC = currentValue - originalValue;
+            
+            // Convert yield to tokens at current redemption value
+            yieldClaimed = (yieldInUSDC * 1e18) / redemptionValue;
+            
+            if (yieldClaimed > 0) {
+                // Mint yield tokens to user
+                _mint(msg.sender, yieldClaimed);
+                
+                // Update original deposits to include claimed yield (for compounding)
+                originalDeposits[msg.sender] = currentValue;
+                
+                emit YieldClaimed(msg.sender, yieldClaimed, yieldInUSDC);
+            }
+        }
+    }
+
+    /**
+     * @dev Compound yield by reinvesting it (automatic compounding)
+     * @return yieldCompounded Amount of yield compounded in USDC terms
+     */
+    function compoundYield() external virtual returns (uint256 yieldCompounded) {
+        require(balanceOf(msg.sender) > 0, "No tokens to compound yield for");
+        
+        // Accrue yield before compounding
+        accrueYield();
+        
+        // Calculate yield earned
+        uint256 currentValue = (balanceOf(msg.sender) * redemptionValue) / 1e18;
+        uint256 originalValue = originalDeposits[msg.sender];
+        
+        if (currentValue > originalValue) {
+            yieldCompounded = currentValue - originalValue;
+            
+            if (yieldCompounded > 0) {
+                // Update original deposits to include compounded yield
+                // This increases the principal for future yield calculations
+                originalDeposits[msg.sender] = currentValue;
+                
+                emit YieldCompounded(msg.sender, yieldCompounded);
+            }
+        }
     }
 
     /**

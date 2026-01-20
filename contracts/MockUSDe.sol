@@ -4,11 +4,11 @@ pragma solidity ^0.8.19;
 import "./MockRWA.sol";
 
 /**
- * @title MockUSDe
+ * @title MockUSDeUpgradeable
  * @dev Mock implementation of Ethena USDe token for testnet development
  * Simulates hedging yield through staking mechanics with variable rewards
  */
-contract MockUSDe is MockRWA {
+contract MockUSDeUpgradeable is MockRWAUpgradeable {
     uint256 public stakingRewardMultiplier; // Multiplier for staking rewards (1e18 = 1x)
     uint256 public lastRewardUpdate;
     uint256 public accumulatedRewards; // Total rewards accumulated per token
@@ -20,11 +20,32 @@ contract MockUSDe is MockRWA {
     event Staked(address indexed user, uint256 amount);
     event Unstaked(address indexed user, uint256 amount);
 
-    constructor(
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    /**
+     * @dev Initialize the contract
+     * @param name Token name
+     * @param symbol Token symbol
+     * @param initialAPY Initial APY in basis points
+     * @param owner Contract owner
+     */
+    function initialize(
         string memory name,
         string memory symbol,
-        uint256 initialAPY
-    ) MockRWA(name, symbol, initialAPY) {
+        uint256 initialAPY,
+        address owner
+    ) public initializer {
+        __MockRWA_init(name, symbol, initialAPY, owner);
+        __MockUSDe_init_unchained();
+    }
+
+    /**
+     * @dev Initialize the contract (unchained)
+     */
+    function __MockUSDe_init_unchained() internal onlyInitializing {
         stakingRewardMultiplier = 1e18; // Start with 1x multiplier
         lastRewardUpdate = block.timestamp;
     }
@@ -146,6 +167,70 @@ contract MockUSDe is MockRWA {
     function claimRewards() external {
         _updateRewards();
         _claimRewards(msg.sender);
+    }
+
+    /**
+     * @dev Claim accrued yield as additional tokens (standard interface)
+     * @return yieldClaimed Amount of yield claimed in token terms
+     */
+    function claimYield() external override returns (uint256 yieldClaimed) {
+        require(balanceOf(msg.sender) > 0, "No tokens to claim yield for");
+        
+        // Accrue yield and update rewards before claiming
+        accrueYield();
+        _updateRewards();
+        
+        // Claim staking rewards first
+        _claimRewards(msg.sender);
+        
+        // Calculate base yield earned
+        uint256 currentValue = (balanceOf(msg.sender) * redemptionValue) / 1e18;
+        uint256 originalValue = originalDeposits[msg.sender];
+        
+        if (currentValue > originalValue) {
+            uint256 yieldInUSDC = currentValue - originalValue;
+            
+            // Convert yield to tokens (1:1 for USDe)
+            yieldClaimed = yieldInUSDC;
+            
+            if (yieldClaimed > 0) {
+                // Mint yield tokens to user
+                _mint(msg.sender, yieldClaimed);
+                
+                // Update original deposits to include claimed yield (for compounding)
+                originalDeposits[msg.sender] = currentValue;
+                
+                emit YieldClaimed(msg.sender, yieldClaimed, yieldInUSDC);
+            }
+        }
+    }
+
+    /**
+     * @dev Compound yield by reinvesting it (automatic compounding)
+     * @return yieldCompounded Amount of yield compounded in USDC terms
+     */
+    function compoundYield() external override returns (uint256 yieldCompounded) {
+        require(balanceOf(msg.sender) > 0, "No tokens to compound yield for");
+        
+        // Accrue yield and update rewards before compounding
+        accrueYield();
+        _updateRewards();
+        
+        // Calculate yield earned (including staking rewards)
+        uint256 currentValue = (balanceOf(msg.sender) * redemptionValue) / 1e18;
+        uint256 originalValue = originalDeposits[msg.sender];
+        
+        if (currentValue > originalValue) {
+            yieldCompounded = currentValue - originalValue;
+            
+            if (yieldCompounded > 0) {
+                // Update original deposits to include compounded yield
+                // This increases the principal for future yield calculations
+                originalDeposits[msg.sender] = currentValue;
+                
+                emit YieldCompounded(msg.sender, yieldCompounded);
+            }
+        }
     }
 
     /**

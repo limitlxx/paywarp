@@ -21,6 +21,8 @@ interface IRWA {
     function getCurrentValue(address user) external view returns (uint256);
     function getYieldEarned(address user) external view returns (uint256);
     function getAPY() external view returns (uint256);
+    function claimYield() external returns (uint256);
+    function compoundYield() external returns (uint256);
 }
 
 /**
@@ -140,6 +142,8 @@ contract BucketVaultUpgradeable is
     event RWADeposit(address indexed user, string indexed bucket, uint256 usdcAmount, uint256 rwaTokenAmount);
     event RWAWithdrawal(address indexed user, string indexed bucket, uint256 rwaTokenAmount, uint256 usdcAmount);
     event RWAIntegrationToggled(bool enabled);
+    event RWADepositFailed(address indexed user, string indexed bucket, uint256 amount, string reason);
+    event RWAWithdrawalFailed(address indexed user, string indexed bucket, uint256 amount, string reason);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -362,15 +366,23 @@ contract BucketVaultUpgradeable is
             "Cannot withdraw directly from Growth bucket"
         );
 
-        BucketBalance storage fromBucketBalance = userBuckets[msg.sender][fromBucket];
-        require(fromBucketBalance.balance >= amount, "Insufficient balance");
+        uint256 actualTransferred;
+        
+        if (rwaIntegrationEnabled) {
+            // Handle RWA token conversions
+            actualTransferred = _transferBetweenRWABuckets(msg.sender, fromBucket, toBucket, amount);
+        } else {
+            // Handle regular bucket transfers
+            BucketBalance storage fromBucketBalance = userBuckets[msg.sender][fromBucket];
+            require(fromBucketBalance.balance >= amount, "Insufficient balance");
 
-        // Execute transfer
-        fromBucketBalance.balance -= amount;
-        userBuckets[msg.sender][toBucket].balance += amount;
+            fromBucketBalance.balance -= amount;
+            userBuckets[msg.sender][toBucket].balance += amount;
+            actualTransferred = amount;
+        }
 
         uint256 nonce = userNonces[msg.sender]++;
-        emit BucketTransfer(msg.sender, fromBucket, toBucket, amount, nonce);
+        emit BucketTransfer(msg.sender, fromBucket, toBucket, actualTransferred, nonce);
     }
 
     /**
@@ -545,30 +557,148 @@ contract BucketVaultUpgradeable is
         
         address rwaContract = rwaContracts[bucket];
         
-        if (rwaContract != address(0)) {
-            try this._safeRWADeposit(rwaContract, amount) {
-                // Track RWA token balance for user
-                IRWA rwa = IRWA(rwaContract);
-                uint256 rwaTokenBalance = rwa.balanceOf(address(this));
-                userRWABalances[user][bucket] = rwaTokenBalance;
-                
-                // Update bucket to reflect RWA integration
-                userBuckets[user][bucket].isYielding = true;
-                userBuckets[user][bucket].lastYieldUpdate = block.timestamp;
-                
-                emit RWADeposit(user, bucket, amount, rwaTokenBalance);
-            } catch {
-                // Fallback to regular bucket balance on RWA failure
-                userBuckets[user][bucket].balance += amount;
+        // Check if RWA integration is enabled and contract is configured
+        if (rwaIntegrationEnabled && rwaContract != address(0)) {
+            // Validate RWA contract is still functional
+            if (_isRWAContractHealthy(rwaContract)) {
+                try this._safeRWADeposit(rwaContract, amount) {
+                    // Track RWA token balance for user
+                    IRWA rwa = IRWA(rwaContract);
+                    uint256 rwaTokenBalance = rwa.balanceOf(address(this));
+                    userRWABalances[user][bucket] = rwaTokenBalance;
+                    
+                    // Update bucket to reflect RWA integration
+                    userBuckets[user][bucket].isYielding = true;
+                    userBuckets[user][bucket].lastYieldUpdate = block.timestamp;
+                    
+                    emit RWADeposit(user, bucket, amount, rwaTokenBalance);
+                    return; // Success, exit early
+                } catch Error(string memory reason) {
+                    // Log the error and fallback to regular bucket balance
+                    emit RWADepositFailed(user, bucket, amount, reason);
+                    _handleRWAFailure(user, bucket, amount, reason);
+                } catch (bytes memory lowLevelData) {
+                    // Handle low-level errors with more detail
+                    string memory errorMsg = lowLevelData.length > 0 ? 
+                        "RWA contract call failed" : "RWA deposit failed";
+                    emit RWADepositFailed(user, bucket, amount, errorMsg);
+                    _handleRWAFailure(user, bucket, amount, errorMsg);
+                }
+            } else {
+                // RWA contract is unhealthy, fallback immediately
+                emit RWADepositFailed(user, bucket, amount, "RWA contract unhealthy");
+                _handleRWAFailure(user, bucket, amount, "RWA contract unhealthy");
             }
         } else {
-            // No RWA contract configured, use regular bucket
+            // RWA integration disabled or no contract configured, use regular bucket
             userBuckets[user][bucket].balance += amount;
+            userBuckets[user][bucket].isYielding = false;
         }
     }
 
     /**
-     * @dev Withdraw from RWA contract
+     * @dev Handle RWA operation failure with state preservation
+     * @param user User address
+     * @param bucket Bucket name
+     * @param amount Amount to preserve
+     * @param reason Failure reason
+     */
+    function _handleRWAFailure(address user, string memory bucket, uint256 amount, string memory reason) internal {
+        // Preserve user funds in regular bucket balance
+        userBuckets[user][bucket].balance += amount;
+        userBuckets[user][bucket].isYielding = false;
+        
+        // Record failure for monitoring
+        emit RWADepositFailed(user, bucket, amount, reason);
+        
+        // Could implement circuit breaker logic here
+        // For now, just ensure user funds are safe
+    }
+
+    /**
+     * @dev Check if RWA contract is healthy and responsive
+     * @param rwaContract RWA contract address
+     * @return healthy True if contract is responsive
+     */
+    function _isRWAContractHealthy(address rwaContract) internal view returns (bool healthy) {
+        if (rwaContract == address(0)) return false;
+        
+        try IRWA(rwaContract).getAPY() returns (uint256) {
+            return true; // Contract responded successfully
+        } catch {
+            return false; // Contract is unresponsive or reverted
+        }
+    }
+
+    /**
+     * @dev Transfer funds between RWA buckets with token conversions
+     * @param user User address
+     * @param fromBucket Source bucket name
+     * @param toBucket Destination bucket name
+     * @param amount Amount to transfer in USDC terms
+     * @return actualTransferred Actual amount transferred
+     */
+    function _transferBetweenRWABuckets(
+        address user, 
+        string memory fromBucket, 
+        string memory toBucket, 
+        uint256 amount
+    ) internal returns (uint256 actualTransferred) {
+        address fromRWAContract = rwaContracts[fromBucket];
+        address toRWAContract = rwaContracts[toBucket];
+        
+        if (fromRWAContract != address(0)) {
+            // Withdraw from source RWA contract
+            IRWA fromRWA = IRWA(fromRWAContract);
+            uint256 currentValue = fromRWA.getCurrentValue(user);
+            require(currentValue >= amount, "Insufficient RWA balance in source bucket");
+            
+            // Calculate RWA tokens to redeem
+            uint256 rwaTokenBalance = fromRWA.balanceOf(user);
+            uint256 tokensToRedeem = (amount * rwaTokenBalance) / currentValue;
+            
+            try this._safeRWARedeem(fromRWAContract, tokensToRedeem) {
+                // Update user's RWA balance tracking
+                userRWABalances[user][fromBucket] = fromRWA.balanceOf(user);
+                actualTransferred = amount;
+            } catch {
+                // Fallback to regular bucket balance
+                BucketBalance storage fromBucketBalance = userBuckets[user][fromBucket];
+                require(fromBucketBalance.balance >= amount, "Insufficient fallback balance");
+                fromBucketBalance.balance -= amount;
+                actualTransferred = amount;
+            }
+        } else {
+            // Source is regular bucket
+            BucketBalance storage fromBucketBalance = userBuckets[user][fromBucket];
+            require(fromBucketBalance.balance >= amount, "Insufficient balance");
+            fromBucketBalance.balance -= amount;
+            actualTransferred = amount;
+        }
+        
+        if (toRWAContract != address(0)) {
+            // Deposit to destination RWA contract
+            try this._safeRWADeposit(toRWAContract, actualTransferred) {
+                // Track RWA token balance for user
+                IRWA toRWA = IRWA(toRWAContract);
+                uint256 rwaTokenBalance = toRWA.balanceOf(user);
+                userRWABalances[user][toBucket] = rwaTokenBalance;
+                
+                // Update bucket to reflect RWA integration
+                userBuckets[user][toBucket].isYielding = true;
+                userBuckets[user][toBucket].lastYieldUpdate = block.timestamp;
+            } catch {
+                // Fallback to regular bucket balance
+                userBuckets[user][toBucket].balance += actualTransferred;
+            }
+        } else {
+            // Destination is regular bucket
+            userBuckets[user][toBucket].balance += actualTransferred;
+        }
+    }
+
+    /**
+     * @dev Withdraw from RWA contract with enhanced error handling and fallback
      * @param user User address
      * @param bucket Bucket name
      * @param amount Amount to withdraw in USDC terms
@@ -578,28 +708,69 @@ contract BucketVaultUpgradeable is
         address rwaContract = rwaContracts[bucket];
         require(rwaContract != address(0), "RWA contract not set");
         
-        IRWA rwa = IRWA(rwaContract);
-        uint256 currentValue = rwa.getCurrentValue(address(this));
-        require(currentValue >= amount, "Insufficient RWA balance");
-        
-        // Calculate RWA tokens to redeem based on current value
-        uint256 rwaTokenBalance = rwa.balanceOf(address(this));
-        uint256 tokensToRedeem = (amount * rwaTokenBalance) / currentValue;
-        
-        try this._safeRWARedeem(rwaContract, tokensToRedeem) {
-            // Update user's RWA balance tracking
-            userRWABalances[user][bucket] = rwa.balanceOf(address(this));
-            
-            actualWithdrawn = amount;
-            emit RWAWithdrawal(user, bucket, tokensToRedeem, amount);
-        } catch {
-            // Fallback to regular bucket balance on RWA failure
-            BucketBalance storage bucketBalance = userBuckets[user][bucket];
-            require(bucketBalance.balance >= amount, "Insufficient fallback balance");
-            
-            bucketBalance.balance -= amount;
-            actualWithdrawn = amount;
+        // Check if RWA contract is healthy before attempting withdrawal
+        if (!_isRWAContractHealthy(rwaContract)) {
+            emit RWAWithdrawalFailed(user, bucket, amount, "RWA contract unhealthy");
+            return _fallbackWithdrawal(user, bucket, amount);
         }
+        
+        IRWA rwa = IRWA(rwaContract);
+        
+        try rwa.getCurrentValue(address(this)) returns (uint256 currentValue) {
+            if (currentValue < amount) {
+                emit RWAWithdrawalFailed(user, bucket, amount, "Insufficient RWA balance");
+                return _fallbackWithdrawal(user, bucket, amount);
+            }
+            
+            // Calculate RWA tokens to redeem based on current value
+            uint256 rwaTokenBalance = rwa.balanceOf(address(this));
+            if (rwaTokenBalance == 0) {
+                emit RWAWithdrawalFailed(user, bucket, amount, "No RWA tokens available");
+                return _fallbackWithdrawal(user, bucket, amount);
+            }
+            
+            uint256 tokensToRedeem = (amount * rwaTokenBalance) / currentValue;
+            
+            try this._safeRWARedeem(rwaContract, tokensToRedeem) {
+                // Update user's RWA balance tracking
+                userRWABalances[user][bucket] = rwa.balanceOf(address(this));
+                
+                actualWithdrawn = amount;
+                emit RWAWithdrawal(user, bucket, tokensToRedeem, amount);
+                return actualWithdrawn;
+            } catch Error(string memory reason) {
+                // Log the error and fallback to regular bucket balance
+                emit RWAWithdrawalFailed(user, bucket, amount, reason);
+                return _fallbackWithdrawal(user, bucket, amount);
+            } catch (bytes memory lowLevelData) {
+                // Handle low-level errors with more detail
+                string memory errorMsg = lowLevelData.length > 0 ? 
+                    "RWA redemption call failed" : "RWA withdrawal failed";
+                emit RWAWithdrawalFailed(user, bucket, amount, errorMsg);
+                return _fallbackWithdrawal(user, bucket, amount);
+            }
+        } catch {
+            // Failed to get current value, fallback immediately
+            emit RWAWithdrawalFailed(user, bucket, amount, "Failed to get RWA value");
+            return _fallbackWithdrawal(user, bucket, amount);
+        }
+    }
+
+    /**
+     * @dev Fallback withdrawal from regular bucket balance
+     * @param user User address
+     * @param bucket Bucket name
+     * @param amount Amount to withdraw
+     * @return actualWithdrawn Actual amount withdrawn
+     */
+    function _fallbackWithdrawal(address user, string memory bucket, uint256 amount) internal returns (uint256 actualWithdrawn) {
+        BucketBalance storage bucketBalance = userBuckets[user][bucket];
+        require(bucketBalance.balance >= amount, "Insufficient fallback balance");
+        
+        bucketBalance.balance -= amount;
+        bucketBalance.isYielding = false; // Mark as non-yielding since RWA failed
+        
+        return amount;
     }
 
     /**
@@ -742,6 +913,174 @@ contract BucketVaultUpgradeable is
      */
     function isRWAIntegrationEnabled() external view returns (bool enabled) {
         return rwaIntegrationEnabled;
+    }
+
+    /**
+     * @dev Claim yield from a specific bucket's RWA contract with enhanced error handling
+     * @param bucket Bucket name to claim yield from
+     * @return yieldClaimed Amount of yield claimed in token terms
+     */
+    function claimBucketYield(string memory bucket) external nonReentrant whenNotPaused returns (uint256 yieldClaimed) {
+        require(rwaIntegrationEnabled, "RWA integration not enabled");
+        
+        address rwaContract = rwaContracts[bucket];
+        require(rwaContract != address(0), "RWA contract not set for bucket");
+        
+        // Check if RWA contract is healthy before attempting yield claim
+        if (!_isRWAContractHealthy(rwaContract)) {
+            revert("RWA contract is currently unavailable");
+        }
+        
+        IRWA rwa = IRWA(rwaContract);
+        
+        // Check if user has RWA tokens in this bucket
+        try rwa.balanceOf(msg.sender) returns (uint256 balance) {
+            require(balance > 0, "No RWA tokens in bucket");
+        } catch {
+            revert("Failed to check RWA token balance");
+        }
+        
+        // Check pending yield before claiming
+        try rwa.getPendingYield(msg.sender) returns (uint256 pendingYield) {
+            if (pendingYield == 0) {
+                return 0; // No yield to claim, return gracefully
+            }
+        } catch {
+            // If we can't check pending yield, still attempt to claim
+            // The claim function will handle if there's nothing to claim
+        }
+        
+        try rwa.claimYield() returns (uint256 claimed) {
+            yieldClaimed = claimed;
+            
+            // Update user's RWA balance tracking
+            userRWABalances[msg.sender][bucket] = rwa.balanceOf(msg.sender);
+            
+            // Update bucket yield tracking
+            userBuckets[msg.sender][bucket].lastYieldUpdate = block.timestamp;
+            
+            emit YieldGenerated(msg.sender, bucket, yieldClaimed);
+        } catch Error(string memory reason) {
+            revert(string(abi.encodePacked("Failed to claim yield: ", reason)));
+        } catch (bytes memory lowLevelData) {
+            string memory errorMsg = lowLevelData.length > 0 ? 
+                "RWA yield claim call failed" : "Failed to claim yield from RWA contract";
+            revert(errorMsg);
+        }
+    }
+
+    /**
+     * @dev Compound yield from a specific bucket's RWA contract with enhanced error handling
+     * @param bucket Bucket name to compound yield from
+     * @return yieldCompounded Amount of yield compounded in USDC terms
+     */
+    function compoundBucketYield(string memory bucket) external nonReentrant whenNotPaused returns (uint256 yieldCompounded) {
+        require(rwaIntegrationEnabled, "RWA integration not enabled");
+        
+        address rwaContract = rwaContracts[bucket];
+        require(rwaContract != address(0), "RWA contract not set for bucket");
+        
+        // Check if RWA contract is healthy before attempting yield compound
+        if (!_isRWAContractHealthy(rwaContract)) {
+            revert("RWA contract is currently unavailable");
+        }
+        
+        IRWA rwa = IRWA(rwaContract);
+        
+        // Check if user has RWA tokens in this bucket
+        try rwa.balanceOf(msg.sender) returns (uint256 balance) {
+            require(balance > 0, "No RWA tokens in bucket");
+        } catch {
+            revert("Failed to check RWA token balance");
+        }
+        
+        // Check pending yield before compounding
+        try rwa.getPendingYield(msg.sender) returns (uint256 pendingYield) {
+            if (pendingYield == 0) {
+                return 0; // No yield to compound, return gracefully
+            }
+        } catch {
+            // If we can't check pending yield, still attempt to compound
+            // The compound function will handle if there's nothing to compound
+        }
+        
+        try rwa.compoundYield() returns (uint256 compounded) {
+            yieldCompounded = compounded;
+            
+            // Update bucket yield tracking
+            userBuckets[msg.sender][bucket].lastYieldUpdate = block.timestamp;
+            
+            emit YieldGenerated(msg.sender, bucket, yieldCompounded);
+        } catch Error(string memory reason) {
+            revert(string(abi.encodePacked("Failed to compound yield: ", reason)));
+        } catch (bytes memory lowLevelData) {
+            string memory errorMsg = lowLevelData.length > 0 ? 
+                "RWA yield compound call failed" : "Failed to compound yield from RWA contract";
+            revert(errorMsg);
+        }
+    }
+
+    /**
+     * @dev Claim yield from all buckets with RWA contracts
+     * @return totalYieldClaimed Total amount of yield claimed across all buckets
+     */
+    function claimAllBucketYields() external nonReentrant whenNotPaused returns (uint256 totalYieldClaimed) {
+        require(rwaIntegrationEnabled, "RWA integration not enabled");
+        
+        string[4] memory buckets = ["billings", "savings", "growth", "instant"];
+        
+        for (uint256 i = 0; i < buckets.length; i++) {
+            address rwaContract = rwaContracts[buckets[i]];
+            if (rwaContract != address(0)) {
+                IRWA rwa = IRWA(rwaContract);
+                if (rwa.balanceOf(msg.sender) > 0) {
+                    try rwa.claimYield() returns (uint256 claimed) {
+                        totalYieldClaimed += claimed;
+                        
+                        // Update user's RWA balance tracking
+                        userRWABalances[msg.sender][buckets[i]] = rwa.balanceOf(msg.sender);
+                        
+                        // Update bucket yield tracking
+                        userBuckets[msg.sender][buckets[i]].lastYieldUpdate = block.timestamp;
+                        
+                        emit YieldGenerated(msg.sender, buckets[i], claimed);
+                    } catch {
+                        // Continue with other buckets if one fails
+                        continue;
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * @dev Compound yield from all buckets with RWA contracts
+     * @return totalYieldCompounded Total amount of yield compounded across all buckets
+     */
+    function compoundAllBucketYields() external nonReentrant whenNotPaused returns (uint256 totalYieldCompounded) {
+        require(rwaIntegrationEnabled, "RWA integration not enabled");
+        
+        string[4] memory buckets = ["billings", "savings", "growth", "instant"];
+        
+        for (uint256 i = 0; i < buckets.length; i++) {
+            address rwaContract = rwaContracts[buckets[i]];
+            if (rwaContract != address(0)) {
+                IRWA rwa = IRWA(rwaContract);
+                if (rwa.balanceOf(msg.sender) > 0) {
+                    try rwa.compoundYield() returns (uint256 compounded) {
+                        totalYieldCompounded += compounded;
+                        
+                        // Update bucket yield tracking
+                        userBuckets[msg.sender][buckets[i]].lastYieldUpdate = block.timestamp;
+                        
+                        emit YieldGenerated(msg.sender, buckets[i], compounded);
+                    } catch {
+                        // Continue with other buckets if one fails
+                        continue;
+                    }
+                }
+            }
+        }
     }
 
     /**

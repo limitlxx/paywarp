@@ -8,6 +8,8 @@ import { ArrowUpRight, ArrowDownLeft, LucideIcon, Loader2, AlertCircle } from "l
 import Link from "next/link"
 import { useState, useRef, useEffect } from "react"
 import { useRouter } from "next/navigation"
+import { useYieldPolling } from "@/lib/yield-polling-service"
+import { useAccount } from "wagmi"
 import { DepositModal } from "@/components/modals/deposit-modal"
 import { TransferModal } from "@/components/modals/transfer-modal"
 import { CurrencyDisplay } from "@/components/currency-display"
@@ -35,6 +37,8 @@ interface BucketCardProps {
   musdBalance?: number
   totalYieldEarned?: number
   currentRWAValue?: number
+  // Real-time yield updates
+  enableRealTimeYields?: boolean
 }
 
 export function BucketCard({
@@ -55,12 +59,33 @@ export function BucketCard({
   musdBalance = 0,
   totalYieldEarned = 0,
   currentRWAValue = 0,
+  enableRealTimeYields = true,
 }: BucketCardProps) {
   const [showDepositModal, setShowDepositModal] = useState(false)
   const [showTransferModal, setShowTransferModal] = useState(false)
   const [isNavigating, setIsNavigating] = useState(false)
   const cardRef = useRef<HTMLDivElement>(null)
   const router = useRouter()
+  const { address } = useAccount()
+  
+  // Real-time yield polling integration
+  const { yields, isLoading: yieldLoading } = useYieldPolling(
+    enableRealTimeYields && address ? address : undefined
+  )
+  
+  // Get real-time yield data for this bucket
+  const bucketYieldData = yields[id as keyof typeof yields]
+  
+  // Use real-time data if available, otherwise fall back to props
+  const effectiveAPY = bucketYieldData?.apy || apy || 0
+  const effectiveIsYielding = bucketYieldData?.isYielding || isYielding || false
+  const effectivePendingYield = bucketYieldData?.pending || 0
+  const effectiveTokenBalance = bucketYieldData?.tokenBalance || (usdyBalance + musdBalance)
+  const effectiveTotalYieldEarned = bucketYieldData?.totalYieldEarned || totalYieldEarned
+  const effectiveCurrentRWAValue = currentRWAValue || (effectiveTokenBalance * 1.0) // Approximate value
+  
+  // Enhanced yield bubble activation
+  const shouldShowYieldBubbles = effectiveIsYielding && (effectivePendingYield > 0.01 || effectiveTokenBalance > 0)
   
   // Mobile and performance optimizations
   const capabilities = useMobileCapabilities()
@@ -102,7 +127,7 @@ export function BucketCard({
 
   const { currentPercentage, shouldUseGPU } = useOptimizedLiquidFill(percentage, color)
   const { bubbleCount, animationSpeed } = useOptimizedBubbles(
-    isYielding || id === "instant" || id === "spendable" || id === "billings",
+    shouldShowYieldBubbles,
     getBubbleType()
   )
 
@@ -222,41 +247,93 @@ export function BucketCard({
                     className="text-3xl font-bold text-foreground"
                     loading={isLoading}
                   />
-                  {(isYielding || apy) && (
-                    <span className="ml-2 text-sm font-medium text-green-400 bg-green-400/10 px-2 py-0.5 rounded-full">
-                      +{apy || 8}% APY
-                    </span>
+                  {(effectiveIsYielding || effectiveAPY > 0) && (
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-sm font-medium text-green-400 bg-green-400/10 px-2 py-0.5 rounded-full">
+                        +{effectiveAPY.toFixed(1)}% APY
+                      </span>
+                      {effectivePendingYield > 0.01 && (
+                        <span className="text-xs text-green-300 bg-green-500/10 px-2 py-0.5 rounded-full animate-pulse">
+                          +${effectivePendingYield.toFixed(2)} pending
+                        </span>
+                      )}
+                    </div>
                   )}
                 </div>
 
-                {/* RWA Balance Display */}
-                {(usdyBalance > 0 || musdBalance > 0 || totalYieldEarned > 0) && (
-                  <div className="space-y-2 p-3 rounded-lg bg-background/50 border border-border/50">
+                {/* Enhanced RWA Balance Display */}
+                {(effectiveTokenBalance > 0 || effectiveTotalYieldEarned > 0 || effectiveCurrentRWAValue > 0) && (
+                  <div className="space-y-3 p-3 rounded-lg bg-background/50 border border-border/50">
                     <div className="flex justify-between items-center">
                       <span className="text-xs font-medium text-muted-foreground">RWA Holdings</span>
-                      <span className="text-xs text-green-400">
-                        +<CurrencyDisplay amount={totalYieldEarned} fromCurrency="USD" className="text-xs" />
-                      </span>
+                      <div className="flex items-center gap-2">
+                        {effectiveTotalYieldEarned > 0 && (
+                          <span className="text-xs text-green-400 font-medium">
+                            +<CurrencyDisplay amount={effectiveTotalYieldEarned} fromCurrency="USD" className="text-xs" />
+                          </span>
+                        )}
+                        {yieldLoading && (
+                          <div className="w-3 h-3 border border-green-400/30 border-t-green-400 rounded-full animate-spin"></div>
+                        )}
+                      </div>
                     </div>
                     
+                    {/* Token Balances */}
                     {usdyBalance > 0 && (
                       <div className="flex justify-between text-xs">
                         <span className="text-muted-foreground">USDY:</span>
-                        <span className="font-mono">{usdyBalance.toFixed(4)}</span>
+                        <span className="font-mono text-foreground">{usdyBalance.toFixed(4)}</span>
                       </div>
                     )}
                     
                     {musdBalance > 0 && (
                       <div className="flex justify-between text-xs">
                         <span className="text-muted-foreground">mUSD:</span>
-                        <span className="font-mono">{musdBalance.toFixed(4)}</span>
+                        <span className="font-mono text-foreground">{musdBalance.toFixed(4)}</span>
+                      </div>
+                    )}
+
+                    {/* Additional RWA tokens based on bucket type */}
+                    {id === 'growth' && effectiveTokenBalance > 0 && (
+                      <div className="flex justify-between text-xs">
+                        <span className="text-muted-foreground">USDe:</span>
+                        <span className="font-mono text-foreground">{(effectiveTokenBalance * 0.6).toFixed(4)}</span>
+                      </div>
+                    )}
+
+                    {id === 'instant' && effectiveTokenBalance > 0 && (
+                      <div className="flex justify-between text-xs">
+                        <span className="text-muted-foreground">mETH:</span>
+                        <span className="font-mono text-foreground">{(effectiveTokenBalance * 0.4).toFixed(4)}</span>
                       </div>
                     )}
                     
-                    {currentRWAValue > 0 && (
+                    {/* Total RWA Value */}
+                    {effectiveCurrentRWAValue > 0 && (
                       <div className="flex justify-between text-xs border-t border-border/30 pt-2">
-                        <span className="text-muted-foreground">Total RWA Value:</span>
-                        <CurrencyDisplay amount={currentRWAValue} fromCurrency="USD" className="text-xs font-medium" />
+                        <span className="text-muted-foreground font-medium">Total RWA Value:</span>
+                        <CurrencyDisplay 
+                          amount={effectiveCurrentRWAValue} 
+                          fromCurrency="USD" 
+                          className="text-xs font-medium text-foreground" 
+                        />
+                      </div>
+                    )}
+
+                    {/* Yield Performance Indicator */}
+                    {effectiveAPY > 0 && (
+                      <div className="flex justify-between text-xs border-t border-border/30 pt-2">
+                        <span className="text-muted-foreground">24h Yield:</span>
+                        <span className="text-green-400 font-medium">
+                          +${((balance * effectiveAPY / 100) / 365).toFixed(2)}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Last Update Timestamp */}
+                    {bucketYieldData?.lastUpdated && (
+                      <div className="text-xs text-muted-foreground/60 text-center">
+                        Updated: {bucketYieldData.lastUpdated.toLocaleTimeString()}
                       </div>
                     )}
                   </div>

@@ -182,3 +182,123 @@ export function PayrollErrorBoundary({ children }: { children: React.ReactNode }
     </ErrorBoundary>
   )
 }
+
+// Specific error boundary for Web3 components
+export function Web3ErrorBoundary({ children }: { children: React.ReactNode }) {
+  return (
+    <ErrorBoundary
+      fallback={({ error, retry }) => (
+        <Card className="glass-card border-red-500/20">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-red-400">
+              <AlertTriangle className="w-5 h-5" />
+              Web3 Connection Error
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Alert className="border-red-500/20 bg-red-500/5">
+              <AlertTriangle className="h-4 w-4 text-red-400" />
+              <AlertDescription className="text-red-300">
+                {error.message.includes('wallet') || error.message.includes('MetaMask')
+                  ? 'Wallet connection issue. Please reconnect your wallet.'
+                  : error.message.includes('network') || error.message.includes('RPC')
+                  ? 'Network connection issue. Please check your internet connection.'
+                  : error.message.includes('chain') || error.message.includes('Chain')
+                  ? 'Wrong network. Please switch to the correct network.'
+                  : error.message || 'Web3 connection failed'
+                }
+              </AlertDescription>
+            </Alert>
+            
+            <div className="flex gap-2">
+              <Button 
+                onClick={retry}
+                className="gradient-primary text-white"
+              >
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Retry Connection
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      onError={(error, errorInfo) => {
+        console.error('Web3 component error:', error, errorInfo)
+        
+        // Log specific Web3 error types
+        if (error.message.includes('wallet')) {
+          console.warn('Wallet connection error - user may need to reconnect')
+        } else if (error.message.includes('chain')) {
+          console.warn('Chain mismatch - user may need to switch networks')
+        } else if (error.message.includes('RPC')) {
+          console.warn('RPC error - network connectivity issue')
+        }
+      }}
+    >
+      {children}
+    </ErrorBoundary>
+  )
+}
+
+// Specific error boundary for transaction components
+export function TransactionErrorBoundary({ children }: { children: React.ReactNode }) {
+  return (
+    <ErrorBoundary
+      fallback={({ error, retry }) => (
+        <Card className="glass-card border-red-500/20">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-red-400">
+              <AlertTriangle className="w-5 h-5" />
+              Transaction Error
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Alert className="border-red-500/20 bg-red-500/5">
+              <AlertTriangle className="h-4 w-4 text-red-400" />
+              <AlertDescription className="text-red-300">
+                {error.message.includes('user rejected') || error.message.includes('User denied')
+                  ? 'Transaction was cancelled by user.'
+                  : error.message.includes('insufficient funds') || error.message.includes('insufficient balance')
+                  ? 'Insufficient funds for this transaction.'
+                  : error.message.includes('gas') || error.message.includes('Gas')
+                  ? 'Transaction failed due to gas issues. Try increasing gas limit.'
+                  : error.message.includes('nonce') || error.message.includes('Nonce')
+                  ? 'Transaction nonce error. Please try again.'
+                  : error.message.includes('reverted') || error.message.includes('execution reverted')
+                  ? 'Transaction was reverted by the contract.'
+                  : error.message || 'Transaction failed'
+                }
+              </AlertDescription>
+            </Alert>
+            
+            <div className="flex gap-2">
+              <Button 
+                onClick={retry}
+                className="gradient-primary text-white"
+              >
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Try Again
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+      onError={(error, errorInfo) => {
+        console.error('Transaction error:', error, errorInfo)
+        
+        // Log specific transaction error types
+        if (error.message.includes('user rejected')) {
+          console.info('Transaction cancelled by user')
+        } else if (error.message.includes('insufficient funds')) {
+          console.warn('Insufficient funds for transaction')
+        } else if (error.message.includes('gas')) {
+          console.warn('Gas-related transaction failure')
+        } else if (error.message.includes('reverted')) {
+          console.error('Contract execution reverted:', error.message)
+        }
+      }}
+    >
+      {children}
+    </ErrorBoundary>
+  )
+}

@@ -1,9 +1,13 @@
 'use client';
 
 import { useAccount, useReadContract, useReadContracts } from 'wagmi';
-import { useMemo } from 'react';
+import { useMemo, useEffect, useState, useCallback } from 'react';
 import { formatUnits } from 'viem';
 import { mantleSepolia } from '@/lib/networks';
+import { yieldPollingService, type BucketYields, type BucketYieldInfo } from '@/lib/yield-polling-service';
+import { rwaIntegration, type RWABalance } from '@/lib/rwa-integration';
+import { rwaErrorHandler } from '@/lib/rwa-error-handler';
+import type { BucketType } from '@/lib/types';
 
 const BUCKET_VAULT_ABI = [
   {
@@ -63,6 +67,15 @@ export interface BucketBalance {
   lastYieldUpdate: bigint;
   formattedBalance: string;
   formattedYield: string;
+  // RWA-specific fields
+  rwaTokenBalance?: number;
+  pendingYield?: number;
+  apy?: number;
+  totalYieldEarned?: number;
+  usdyBalance?: RWABalance;
+  musdBalance?: RWABalance;
+  rwaLastUpdated?: Date;
+  rwaError?: string;
 }
 
 export interface SplitConfig {
@@ -83,12 +96,25 @@ export interface BucketBalancesReturn {
   isError: boolean;
   hasData: boolean;
   refetch: () => void;
+  // RWA-specific fields
+  yieldData: BucketYields | null;
+  totalRWAValue: number;
+  totalPendingYield: number;
+  isYieldPollingActive: boolean;
+  rwaErrors: Record<string, string>;
+  refreshRWAData: () => Promise<void>;
 }
 
 const BUCKET_NAMES = ['billings', 'savings', 'growth', 'instant', 'spendable'] as const;
 
 export function useBucketBalances(): BucketBalancesReturn {
   const { address } = useAccount();
+  
+  // RWA-specific state
+  const [yieldData, setYieldData] = useState<BucketYields | null>(null);
+  const [rwaBalances, setRwaBalances] = useState<Record<string, { usdy?: RWABalance; musd?: RWABalance }>>({});
+  const [rwaErrors, setRwaErrors] = useState<Record<string, string>>({});
+  const [isRWALoading, setIsRWALoading] = useState(false);
   
   const bucketVaultAddress = (process.env.NEXT_PUBLIC_BUCKET_VAULT_SEPOLIA || 
                               process.env.NEXT_PUBLIC_BUCKET_VAULT_MAINNET) as `0x${string}`;
@@ -128,6 +154,112 @@ export function useBucketBalances(): BucketBalancesReturn {
     },
   });
 
+  // Initialize yield polling when address changes
+  useEffect(() => {
+    if (!address) {
+      yieldPollingService.stopPolling();
+      setYieldData(null);
+      return;
+    }
+
+    // Start yield polling
+    yieldPollingService.startPolling(address);
+
+    // Subscribe to yield updates
+    const unsubscribe = yieldPollingService.onYieldUpdate((newYields) => {
+      setYieldData(newYields);
+    });
+
+    // Get initial yield data
+    yieldPollingService.refreshYields().then((yields) => {
+      setYieldData(yields);
+    });
+
+    return () => {
+      unsubscribe();
+      yieldPollingService.stopPolling();
+    };
+  }, [address]);
+
+  // Fetch RWA balances for RWA-enabled buckets
+  const fetchRWABalances = useCallback(async () => {
+    if (!address || !yieldData) return;
+
+    setIsRWALoading(true);
+    const newRwaBalances: Record<string, { usdy?: RWABalance; musd?: RWABalance }> = {};
+    const newRwaErrors: Record<string, string> = {};
+
+    // Only fetch for RWA-enabled buckets (excluding spendable)
+    const rwaBuckets: BucketType[] = ['billings', 'savings', 'growth', 'instant'];
+
+    for (const bucketType of rwaBuckets) {
+      try {
+        // Fetch USDY and mUSD balances in parallel
+        const [usdyResult, musdResult] = await Promise.allSettled([
+          rwaIntegration.getUSDYBalance(bucketType),
+          rwaIntegration.getMUSDBalance(bucketType)
+        ]);
+
+        const bucketBalances: { usdy?: RWABalance; musd?: RWABalance } = {};
+
+        if (usdyResult.status === 'fulfilled') {
+          bucketBalances.usdy = usdyResult.value;
+        } else {
+          console.warn(`Failed to fetch USDY balance for ${bucketType}:`, usdyResult.reason);
+        }
+
+        if (musdResult.status === 'fulfilled') {
+          bucketBalances.musd = musdResult.value;
+        } else {
+          console.warn(`Failed to fetch mUSD balance for ${bucketType}:`, musdResult.reason);
+        }
+
+        newRwaBalances[bucketType] = bucketBalances;
+
+        // Clear any previous errors for this bucket
+        delete newRwaErrors[bucketType];
+
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown RWA error';
+        newRwaErrors[bucketType] = errorMessage;
+        console.error(`Error fetching RWA balances for ${bucketType}:`, error);
+        
+        // Preserve error state using RWA error handler
+        rwaErrorHandler.preserveErrorState(`rwa-balance-${bucketType}`, {
+          bucketType,
+          error: errorMessage,
+          timestamp: new Date()
+        });
+      }
+    }
+
+    setRwaBalances(newRwaBalances);
+    setRwaErrors(newRwaErrors);
+    setIsRWALoading(false);
+  }, [address, yieldData]);
+
+  // Fetch RWA balances when yield data updates
+  useEffect(() => {
+    if (yieldData && address) {
+      fetchRWABalances();
+    }
+  }, [yieldData, address, fetchRWABalances]);
+
+  // Refresh RWA data function
+  const refreshRWAData = useCallback(async () => {
+    if (!address) return;
+    
+    try {
+      // Refresh yield data first
+      await yieldPollingService.refreshYields();
+      
+      // Then refresh RWA balances
+      await fetchRWABalances();
+    } catch (error) {
+      console.error('Error refreshing RWA data:', error);
+    }
+  }, [address, fetchRWABalances]);
+
   const buckets = useMemo<BucketBalance[]>(() => {
     if (!data || !address) return [];
 
@@ -143,6 +275,11 @@ export function useBucketBalances(): BucketBalancesReturn {
           lastYieldUpdate: 0n,
           formattedBalance: '0.00',
           formattedYield: '0.00',
+          rwaTokenBalance: 0,
+          pendingYield: 0,
+          apy: 0,
+          totalYieldEarned: 0,
+          rwaError: rwaErrors[name],
         };
       }
 
@@ -154,17 +291,40 @@ export function useBucketBalances(): BucketBalancesReturn {
         lastYieldUpdate: bigint;
       };
 
+      // Get RWA-specific data for this bucket
+      const bucketYieldInfo = yieldData?.[name as keyof BucketYields];
+      const bucketRwaBalances = rwaBalances[name];
+      
+      // Calculate total RWA token balance
+      const usdyTokenBalance = bucketRwaBalances?.usdy?.tokenAmount || 0;
+      const musdTokenBalance = bucketRwaBalances?.musd?.tokenAmount || 0;
+      const totalRwaTokenBalance = usdyTokenBalance + musdTokenBalance;
+
+      // Calculate total yield earned from RWA
+      const usdyYieldEarned = bucketRwaBalances?.usdy?.yieldEarned || 0;
+      const musdYieldEarned = bucketRwaBalances?.musd?.yieldEarned || 0;
+      const totalRwaYieldEarned = usdyYieldEarned + musdYieldEarned;
+
       return {
         name,
         balance: bucketData.balance,
         yieldBalance: bucketData.yieldBalance,
-        isYielding: bucketData.isYielding,
+        isYielding: bucketData.isYielding || (bucketYieldInfo?.isYielding ?? false),
         lastYieldUpdate: bucketData.lastYieldUpdate,
         formattedBalance: formatUnits(bucketData.balance, USDC_DECIMALS),
         formattedYield: formatUnits(bucketData.yieldBalance, USDC_DECIMALS),
+        // RWA-specific fields
+        rwaTokenBalance: totalRwaTokenBalance,
+        pendingYield: bucketYieldInfo?.pending || 0,
+        apy: bucketYieldInfo?.apy || 0,
+        totalYieldEarned: totalRwaYieldEarned,
+        usdyBalance: bucketRwaBalances?.usdy,
+        musdBalance: bucketRwaBalances?.musd,
+        rwaLastUpdated: bucketYieldInfo?.lastUpdated,
+        rwaError: rwaErrors[name],
       };
     });
-  }, [data, address]);
+  }, [data, address, yieldData, rwaBalances, rwaErrors]);
 
   const totalBalance = useMemo(() => {
     return buckets.reduce((sum, bucket) => sum + bucket.balance, 0n);
@@ -173,6 +333,20 @@ export function useBucketBalances(): BucketBalancesReturn {
   const formattedTotalBalance = useMemo(() => {
     return formatUnits(totalBalance, USDC_DECIMALS);
   }, [totalBalance]);
+
+  // Calculate total RWA value across all buckets
+  const totalRWAValue = useMemo(() => {
+    return buckets.reduce((sum, bucket) => {
+      const usdyValue = bucket.usdyBalance?.currentValue || 0;
+      const musdValue = bucket.musdBalance?.currentValue || 0;
+      return sum + usdyValue + musdValue;
+    }, 0);
+  }, [buckets]);
+
+  // Calculate total pending yield across all buckets
+  const totalPendingYield = useMemo(() => {
+    return buckets.reduce((sum, bucket) => sum + (bucket.pendingYield || 0), 0);
+  }, [buckets]);
 
   const splitConfig = useMemo<SplitConfig | null>(() => {
     if (!data || !address) return null;
@@ -207,11 +381,11 @@ export function useBucketBalances(): BucketBalancesReturn {
   }, [data, address]);
 
   const hasData = useMemo(() => {
-    return totalBalance > 0n || (splitConfig !== null && 
+    return totalBalance > 0n || totalRWAValue > 0 || (splitConfig !== null && 
       (splitConfig.billingsPercent + splitConfig.savingsPercent + 
        splitConfig.growthPercent + splitConfig.instantPercent + 
        splitConfig.spendablePercent) > 0);
-  }, [totalBalance, splitConfig]);
+  }, [totalBalance, totalRWAValue, splitConfig]);
 
   return {
     buckets,
@@ -219,9 +393,16 @@ export function useBucketBalances(): BucketBalancesReturn {
     formattedTotalBalance,
     splitConfig,
     nonce,
-    isLoading,
+    isLoading: isLoading || isRWALoading,
     isError,
     hasData,
     refetch,
+    // RWA-specific fields
+    yieldData,
+    totalRWAValue,
+    totalPendingYield,
+    isYieldPollingActive: yieldPollingService.isActive(),
+    rwaErrors,
+    refreshRWAData,
   };
 }

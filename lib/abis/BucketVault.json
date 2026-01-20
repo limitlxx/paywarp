@@ -332,6 +332,162 @@
     "anonymous": false,
     "inputs": [
       {
+        "indexed": true,
+        "internalType": "string",
+        "name": "bucket",
+        "type": "string"
+      },
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "rwaContract",
+        "type": "address"
+      }
+    ],
+    "name": "RWAContractSet",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "user",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "string",
+        "name": "bucket",
+        "type": "string"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "usdcAmount",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "rwaTokenAmount",
+        "type": "uint256"
+      }
+    ],
+    "name": "RWADeposit",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "user",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "string",
+        "name": "bucket",
+        "type": "string"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "string",
+        "name": "reason",
+        "type": "string"
+      }
+    ],
+    "name": "RWADepositFailed",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "bool",
+        "name": "enabled",
+        "type": "bool"
+      }
+    ],
+    "name": "RWAIntegrationToggled",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "user",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "string",
+        "name": "bucket",
+        "type": "string"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "rwaTokenAmount",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "usdcAmount",
+        "type": "uint256"
+      }
+    ],
+    "name": "RWAWithdrawal",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "user",
+        "type": "address"
+      },
+      {
+        "indexed": true,
+        "internalType": "string",
+        "name": "bucket",
+        "type": "string"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "amount",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "string",
+        "name": "reason",
+        "type": "string"
+      }
+    ],
+    "name": "RWAWithdrawalFailed",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
         "indexed": false,
         "internalType": "address",
         "name": "account",
@@ -415,6 +571,26 @@
     "type": "function"
   },
   {
+    "inputs": [
+      { "internalType": "address", "name": "rwaContract", "type": "address" },
+      { "internalType": "uint256", "name": "amount", "type": "uint256" }
+    ],
+    "name": "_safeRWADeposit",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "address", "name": "rwaContract", "type": "address" },
+      { "internalType": "uint256", "name": "tokenAmount", "type": "uint256" }
+    ],
+    "name": "_safeRWARedeem",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
     "inputs": [{ "internalType": "address", "name": "", "type": "address" }],
     "name": "authorizedOperators",
     "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
@@ -428,6 +604,58 @@
       { "internalType": "contract IERC20", "name": "", "type": "address" }
     ],
     "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "claimAllBucketYields",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "totalYieldClaimed",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "string", "name": "bucket", "type": "string" }
+    ],
+    "name": "claimBucketYield",
+    "outputs": [
+      { "internalType": "uint256", "name": "yieldClaimed", "type": "uint256" }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "compoundAllBucketYields",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "totalYieldCompounded",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "string", "name": "bucket", "type": "string" }
+    ],
+    "name": "compoundBucketYield",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "yieldCompounded",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable",
     "type": "function"
   },
   {
@@ -510,6 +738,17 @@
   },
   {
     "inputs": [
+      { "internalType": "string", "name": "bucket", "type": "string" }
+    ],
+    "name": "getBucketAPY",
+    "outputs": [
+      { "internalType": "uint256", "name": "apy", "type": "uint256" }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
       { "internalType": "address", "name": "user", "type": "address" },
       { "internalType": "string", "name": "bucket", "type": "string" }
     ],
@@ -534,6 +773,29 @@
         "name": "",
         "type": "tuple"
       }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "address", "name": "user", "type": "address" },
+      { "internalType": "string", "name": "bucket", "type": "string" }
+    ],
+    "name": "getBucketPendingYield",
+    "outputs": [
+      { "internalType": "uint256", "name": "pendingYield", "type": "uint256" }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "string", "name": "bucket", "type": "string" }
+    ],
+    "name": "getRWAContract",
+    "outputs": [
+      { "internalType": "address", "name": "rwaContract", "type": "address" }
     ],
     "stateMutability": "view",
     "type": "function"
@@ -620,12 +882,31 @@
   },
   {
     "inputs": [
+      { "internalType": "address", "name": "user", "type": "address" },
+      { "internalType": "string", "name": "bucket", "type": "string" }
+    ],
+    "name": "getUserRWABalance",
+    "outputs": [
+      { "internalType": "uint256", "name": "rwaBalance", "type": "uint256" }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
       { "internalType": "address", "name": "_baseToken", "type": "address" },
       { "internalType": "address", "name": "_owner", "type": "address" }
     ],
     "name": "initialize",
     "outputs": [],
     "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "isRWAIntegrationEnabled",
+    "outputs": [{ "internalType": "bool", "name": "enabled", "type": "bool" }],
+    "stateMutability": "view",
     "type": "function"
   },
   {
@@ -678,6 +959,20 @@
     "type": "function"
   },
   {
+    "inputs": [{ "internalType": "string", "name": "", "type": "string" }],
+    "name": "rwaContracts",
+    "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "rwaIntegrationEnabled",
+    "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
     "inputs": [
       { "internalType": "address", "name": "operator", "type": "address" },
       { "internalType": "bool", "name": "authorized", "type": "bool" }
@@ -710,6 +1005,23 @@
       { "internalType": "uint256", "name": "_protocolFee", "type": "uint256" }
     ],
     "name": "setProtocolFee",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "string", "name": "bucket", "type": "string" },
+      { "internalType": "address", "name": "rwaContract", "type": "address" }
+    ],
+    "name": "setRWAContract",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [{ "internalType": "bool", "name": "enabled", "type": "bool" }],
+    "name": "setRWAIntegrationEnabled",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -840,6 +1152,16 @@
   {
     "inputs": [{ "internalType": "address", "name": "", "type": "address" }],
     "name": "userNonces",
+    "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      { "internalType": "address", "name": "", "type": "address" },
+      { "internalType": "string", "name": "", "type": "string" }
+    ],
+    "name": "userRWABalances",
     "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
     "stateMutability": "view",
     "type": "function"

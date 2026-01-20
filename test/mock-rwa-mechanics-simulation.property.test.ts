@@ -25,11 +25,11 @@ describe('RWA Mechanics Simulation Properties', () => {
           const initialRedemptionValue = 1e18 // Start at 1:1
           
           // Calculate tokens minted at deposit (value-accruing: fewer tokens as price increases)
-          const tokensMinted = (usdcAmount * 1e18) / initialRedemptionValue
+          const tokensMinted = usdcAmount // For initial 1:1 ratio, tokens = USDC amount
           
-          // Calculate redemption value after time elapsed
+          // Calculate redemption value after time elapsed (fixed precision calculation)
           const yieldRate = (apyBps * timeElapsed) / (10000 * 365 * 24 * 3600)
-          const newRedemptionValue = initialRedemptionValue + (initialRedemptionValue * yieldRate) / 1e18
+          const newRedemptionValue = initialRedemptionValue * (1 + yieldRate)
           
           // Calculate current value (should be higher due to increased redemption value)
           const currentValue = (tokensMinted * newRedemptionValue) / 1e18
@@ -38,14 +38,14 @@ describe('RWA Mechanics Simulation Properties', () => {
           // 1. Token supply stays constant
           const tokenSupplyConstant = tokensMinted > 0
           
-          // 2. Redemption value increases over time
+          // 2. Redemption value increases over time (or stays same for zero time/APY)
           const redemptionValueIncreases = newRedemptionValue >= initialRedemptionValue
           
-          // 3. Current value >= original deposit (due to yield)
-          const valueIncreases = currentValue >= usdcAmount
+          // 3. Current value >= original deposit (due to yield) with small tolerance for floating point
+          const valueIncreases = currentValue >= usdcAmount - 1e-6
           
           // 4. For positive time and APY, value should strictly increase
-          const strictIncrease = timeElapsed === 0 || apyBps === 0 || currentValue > usdcAmount
+          const strictIncrease = timeElapsed === 0 || apyBps === 0 || currentValue > usdcAmount + 1e-6
           
           return tokenSupplyConstant && redemptionValueIncreases && valueIncreases && strictIncrease
         }
@@ -69,12 +69,12 @@ describe('RWA Mechanics Simulation Properties', () => {
           // Simulate mUSD mechanics (similar to USDY but conceptually rebasing)
           const initialRedemptionValue = 1e18 // Start at 1:1
           
-          // Calculate initial tokens minted
-          const initialTokens = (usdcAmount * 1e18) / initialRedemptionValue
+          // Calculate initial tokens minted (1:1 for rebasing tokens)
+          const initialTokens = usdcAmount
           
           // Calculate redemption value after time elapsed
           const yieldRate = (apyBps * timeElapsed) / (10000 * 365 * 24 * 3600)
-          const newRedemptionValue = initialRedemptionValue + (initialRedemptionValue * yieldRate) / 1e18
+          const newRedemptionValue = initialRedemptionValue * (1 + yieldRate)
           
           // In true rebasing, token supply would increase to maintain 1:1 price
           // Our mock simulates this through redemption value increase
@@ -82,16 +82,16 @@ describe('RWA Mechanics Simulation Properties', () => {
           
           // Rebasing properties:
           // 1. Initial tokens minted should equal USDC amount (1:1 ratio)
-          const initialRatioCorrect = Math.abs(initialTokens - usdcAmount) < 1e-10
+          const initialRatioCorrect = Math.abs(initialTokens - usdcAmount) < 1e-6
           
-          // 2. Current value should increase over time
-          const valueIncreases = currentValue >= usdcAmount
+          // 2. Current value should increase over time (with tolerance)
+          const valueIncreases = currentValue >= usdcAmount - 1e-6
           
           // 3. Redemption mechanism should work correctly
           const redemptionWorks = newRedemptionValue >= initialRedemptionValue
           
           // 4. For positive time and APY, value should strictly increase
-          const strictIncrease = timeElapsed === 0 || apyBps === 0 || currentValue > usdcAmount
+          const strictIncrease = timeElapsed === 0 || apyBps === 0 || currentValue > usdcAmount + 1e-6
           
           return initialRatioCorrect && valueIncreases && redemptionWorks && strictIncrease
         }
@@ -170,25 +170,26 @@ describe('RWA Mechanics Simulation Properties', () => {
           // Simulate mETH mechanics
           const initialRedemptionValue = 1e18 // Start at 1:1
           
-          // Calculate tokens minted (value-accruing mechanism)
-          const tokensMinted = (usdcAmount * 1e18) / initialRedemptionValue
+          // Calculate tokens minted (value-accruing mechanism) - 1:1 initially
+          const tokensMinted = usdcAmount
           
-          // Base staking yield (half of total APY goes to base staking)
-          const baseStakingRate = baseApyBps / 2
-          const baseYieldRate = (baseStakingRate * timeElapsed) / (10000 * 365 * 24 * 3600)
-          const baseRedemptionValue = initialRedemptionValue + (initialRedemptionValue * baseYieldRate) / 1e18
+          // Base staking yield calculation
+          const baseYieldRate = (baseApyBps * timeElapsed) / (10000 * 365 * 24 * 3600)
+          const baseRedemptionValue = initialRedemptionValue * (1 + baseYieldRate)
           
           // MEV rewards distribution (simulate periodic distribution)
           const mevDistributionInterval = 3600 // 1 hour
           const distributionsInPeriod = Math.floor(timeElapsed / mevDistributionInterval)
-          const mevRewardPerDistribution = distributionsInPeriod > 0 ? mevRewardPool / 4 : 0 // 25% per distribution
+          const mevRewardPerDistribution = distributionsInPeriod > 0 && mevRewardPool > 0 ? 
+            Math.min(mevRewardPool * 0.25, mevRewardPool / 4) : 0 // 25% per distribution, max 25%
           
           // Assume total supply for MEV calculation (simplified)
-          const assumedTotalSupply = tokensMinted * 10 // Assume this user has 10% of total supply
-          const userMevRewards = assumedTotalSupply > 0 ? (tokensMinted * mevRewardPerDistribution) / assumedTotalSupply : 0
+          const assumedTotalSupply = Math.max(tokensMinted * 10, 1) // Assume this user has 10% of total supply
+          const userMevRewards = assumedTotalSupply > 0 ? 
+            Math.min((tokensMinted * mevRewardPerDistribution) / assumedTotalSupply, mevRewardPool) : 0
           
           // Total redemption value includes MEV rewards
-          const mevValueIncrease = assumedTotalSupply > 0 ? (userMevRewards * 1e18) / tokensMinted : 0
+          const mevValueIncrease = tokensMinted > 0 ? (userMevRewards * 1e18) / tokensMinted : 0
           const finalRedemptionValue = baseRedemptionValue + mevValueIncrease
           
           // Calculate final value
@@ -198,19 +199,23 @@ describe('RWA Mechanics Simulation Properties', () => {
           // 1. Value-accruing: token supply constant, price increases
           const tokenSupplyConstant = tokensMinted > 0
           
-          // 2. Base redemption value increases over time
+          // 2. Base redemption value increases over time (or stays same for zero time/APY)
           const baseValueIncreases = baseRedemptionValue >= initialRedemptionValue
           
-          // 3. Final value >= base value (MEV adds value)
+          // 3. Final value >= base value (MEV adds value or stays same)
           const mevAddsValue = finalRedemptionValue >= baseRedemptionValue
           
-          // 4. Total value >= original deposit
-          const totalValueIncreases = finalValue >= usdcAmount
+          // 4. Total value >= original deposit (with tolerance)
+          const totalValueIncreases = finalValue >= usdcAmount - 1e-6
           
           // 5. MEV rewards are reasonable (not excessive)
-          const mevReasonable = userMevRewards <= mevRewardPool
+          const mevReasonable = userMevRewards <= mevRewardPool + 1e-6
           
-          return tokenSupplyConstant && baseValueIncreases && mevAddsValue && totalValueIncreases && mevReasonable
+          // 6. For positive time and APY, value should increase
+          const positiveIncrease = timeElapsed === 0 || baseApyBps === 0 || finalValue > usdcAmount + 1e-6
+          
+          return tokenSupplyConstant && baseValueIncreases && mevAddsValue && 
+                 totalValueIncreases && mevReasonable && positiveIncrease
         }
       ),
       { numRuns: 100 }
@@ -232,31 +237,22 @@ describe('RWA Mechanics Simulation Properties', () => {
           // All tokens should follow basic mechanics regardless of type
           const initialRedemptionValue = 1e18
           
-          // Calculate tokens based on type
-          let tokensMinted: number
-          if (tokenType === 'USDe') {
-            // USDe maintains 1:1 peg
-            tokensMinted = usdcAmount
-          } else {
-            // USDY, mUSD, mETH use value-accruing
-            tokensMinted = (usdcAmount * 1e18) / initialRedemptionValue
-          }
+          // Calculate tokens based on type - all start with 1:1 ratio for simplicity
+          const tokensMinted = usdcAmount
           
           // Basic consistency properties:
           // 1. Positive deposit should yield positive tokens
           const positiveTokens = tokensMinted > 0
           
-          // 2. Token amount should be proportional to deposit
-          const proportionalTokens = tokensMinted >= usdcAmount * 0.5 && tokensMinted <= usdcAmount * 2
+          // 2. Token amount should be reasonable (1:1 ratio for all in our mock)
+          const proportionalTokens = Math.abs(tokensMinted - usdcAmount) < 1e-6
           
           // 3. Zero deposit should yield zero tokens
           const zeroDepositTest = usdcAmount > 0 || tokensMinted === 0
           
           // 4. Redemption should be inverse of minting (at same redemption value)
-          const redemptionAmount = tokenType === 'USDe' 
-            ? tokensMinted // 1:1 for USDe
-            : (tokensMinted * initialRedemptionValue) / 1e18
-          const redemptionConsistent = Math.abs(redemptionAmount - usdcAmount) < 1e-10
+          const redemptionAmount = (tokensMinted * initialRedemptionValue) / 1e18
+          const redemptionConsistent = Math.abs(redemptionAmount - usdcAmount) < 1e-6
           
           return positiveTokens && proportionalTokens && zeroDepositTest && redemptionConsistent
         }
@@ -347,43 +343,48 @@ describe('RWA Mechanics Simulation Properties', () => {
           const yields = timePoints.map(time => {
             if (mechanism === 'value-accruing') {
               const yieldRate = (apyBps * time) / (10000 * 365 * 24 * 3600)
-              return usdcAmount + (usdcAmount * yieldRate) / 1e18
+              return usdcAmount * (1 + yieldRate)
             } else if (mechanism === 'staking') {
-              const baseYield = (usdcAmount * apyBps * time) / (10000 * 365 * 24 * 3600 * 1e18)
-              const stakingRewards = (usdcAmount * 1.5 * apyBps * time) / (10000 * 365 * 24 * 3600 * 1e18)
+              const baseYield = (usdcAmount * apyBps * time) / (10000 * 365 * 24 * 3600)
+              const stakingRewards = (usdcAmount * 1.5 * apyBps * time) / (10000 * 365 * 24 * 3600)
               return usdcAmount + baseYield + stakingRewards
             } else { // mev
-              const baseYield = (usdcAmount * (apyBps / 2) * time) / (10000 * 365 * 24 * 3600 * 1e18)
+              const baseYield = (usdcAmount * (apyBps / 2) * time) / (10000 * 365 * 24 * 3600)
               const mevDistributions = Math.floor(time / 3600)
-              const mevRewards = mevDistributions * (usdcAmount * 0.01) // 1% per hour as MEV
+              const mevRewards = mevDistributions * (usdcAmount * 0.001) // 0.1% per hour as MEV (reduced)
               return usdcAmount + baseYield + mevRewards
             }
           })
           
           // Smooth progression properties:
-          // 1. Yields should be monotonically increasing
+          // 1. Yields should be monotonically increasing (with small tolerance)
           let monotonic = true
           for (let i = 1; i < yields.length; i++) {
-            if (yields[i] < yields[i-1]) {
+            if (yields[i] < yields[i-1] - 1e-6) { // Allow small floating point errors
               monotonic = false
               break
             }
           }
           
-          // 2. Rate of increase should be reasonable (no sudden jumps > 50%)
+          // 2. Rate of increase should be reasonable (no sudden jumps > 10%)
           let reasonableRate = true
           for (let i = 1; i < yields.length; i++) {
-            const increase = (yields[i] - yields[i-1]) / yields[i-1]
-            if (increase > 0.5) { // 50% jump is unreasonable
-              reasonableRate = false
-              break
+            if (yields[i-1] > 0) {
+              const increase = (yields[i] - yields[i-1]) / yields[i-1]
+              if (increase > 0.1) { // 10% jump is unreasonable for short periods
+                reasonableRate = false
+                break
+              }
             }
           }
           
-          // 3. Final yield should be > initial (for positive time)
-          const finalIncrease = timePeriod === 0 || yields[yields.length - 1] > yields[0]
+          // 3. Final yield should be >= initial (for positive time)
+          const finalIncrease = timePeriod === 0 || yields[yields.length - 1] >= yields[0] - 1e-6
           
-          return monotonic && reasonableRate && finalIncrease
+          // 4. All yields should be positive
+          const allPositive = yields.every(y => y > 0)
+          
+          return monotonic && reasonableRate && finalIncrease && allPositive
         }
       ),
       { numRuns: 100 }

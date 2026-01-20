@@ -3,6 +3,7 @@ pragma solidity ^0.8.19;
 
 import "forge-std/Script.sol";
 import "forge-std/console.sol";
+import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import "../contracts/MockUSDY.sol";
 import "../contracts/MockMUSD.sol";
 import "../contracts/MockUSDe.sol";
@@ -50,50 +51,70 @@ contract DeployAllRWAContracts is Script {
 
         vm.startBroadcast(deployerPrivateKey);
 
-        // Deploy MockUSDY (Billings bucket)
-        console.log("\n--- Deploying MockUSDY ---");
-        mockUSDY = address(new MockUSDY(
+        // Deploy MockUSDY (Billings bucket) with proxy
+        console.log("\n--- Deploying MockUSDYUpgradeable ---");
+        MockUSDYUpgradeable usdyImpl = new MockUSDYUpgradeable();
+        bytes memory usdyInitData = abi.encodeWithSelector(
+            MockUSDYUpgradeable.initialize.selector,
             "Mock Ondo US Dollar Yield",
-            "USDY", 
-            USDY_APY
-        ));
+            "USDY",
+            USDY_APY,
+            deployer
+        );
+        ERC1967Proxy usdyProxy = new ERC1967Proxy(address(usdyImpl), usdyInitData);
+        mockUSDY = address(usdyProxy);
         console.log("MockUSDY deployed to:", mockUSDY);
 
-        // Deploy MockMUSD (Savings bucket)
-        console.log("\n--- Deploying MockMUSD ---");
-        mockMUSD = address(new MockMUSD(
+        // Deploy MockMUSD (Savings bucket) with proxy
+        console.log("\n--- Deploying MockMUSDUpgradeable ---");
+        MockMUSDUpgradeable musdImpl = new MockMUSDUpgradeable();
+        bytes memory musdInitData = abi.encodeWithSelector(
+            MockMUSDUpgradeable.initialize.selector,
             "Mock Ondo Money Market USD",
             "mUSD",
-            MUSD_APY
-        ));
+            MUSD_APY,
+            deployer
+        );
+        ERC1967Proxy musdProxy = new ERC1967Proxy(address(musdImpl), musdInitData);
+        mockMUSD = address(musdProxy);
         console.log("MockMUSD deployed to:", mockMUSD);
 
-        // Deploy MockUSDe (Growth bucket)
-        console.log("\n--- Deploying MockUSDe ---");
-        mockUSDe = address(new MockUSDe(
+        // Deploy MockUSDe (Growth bucket) with proxy
+        console.log("\n--- Deploying MockUSDeUpgradeable ---");
+        MockUSDeUpgradeable usdeImpl = new MockUSDeUpgradeable();
+        bytes memory usdeInitData = abi.encodeWithSelector(
+            MockUSDeUpgradeable.initialize.selector,
             "Mock Ethena USDe",
             "USDe",
-            USDE_APY
-        ));
+            USDE_APY,
+            deployer
+        );
+        ERC1967Proxy usdeProxy = new ERC1967Proxy(address(usdeImpl), usdeInitData);
+        mockUSDe = address(usdeProxy);
         console.log("MockUSDe deployed to:", mockUSDe);
 
-        // Deploy MockmETH (Instant bucket)
-        console.log("\n--- Deploying MockmETH ---");
-        mockMETH = address(new MockmETH(
+        // Deploy MockmETH (Instant bucket) with proxy
+        console.log("\n--- Deploying MockmETHUpgradeable ---");
+        MockmETHUpgradeable methImpl = new MockmETHUpgradeable();
+        bytes memory methInitData = abi.encodeWithSelector(
+            MockmETHUpgradeable.initialize.selector,
             "Mock Mantle Staked ETH",
             "mETH",
-            METH_APY
-        ));
+            METH_APY,
+            deployer
+        );
+        ERC1967Proxy methProxy = new ERC1967Proxy(address(methImpl), methInitData);
+        mockMETH = address(methProxy);
         console.log("MockmETH deployed to:", mockMETH);
 
         // Initialize contracts with test data
         console.log("\n--- Initializing Contracts ---");
         
-        // Set APY rates (already set in constructors, but verify)
-        MockUSDY(mockUSDY).updateAPY(USDY_APY);
-        MockMUSD(mockMUSD).updateAPY(MUSD_APY);
-        MockUSDe(mockUSDe).setApyBps(USDE_APY);
-        MockmETH(mockMETH).setBaseStakingRate(600); // 6% base + 4% MEV = 10% total
+        // Set APY rates (verify they're set correctly)
+        MockUSDYUpgradeable(mockUSDY).updateAPY(USDY_APY);
+        MockMUSDUpgradeable(mockMUSD).updateAPY(MUSD_APY);
+        MockUSDeUpgradeable(mockUSDe).setApyBps(USDE_APY);
+        MockmETHUpgradeable(mockMETH).setBaseStakingRate(600); // 6% base + 4% MEV = 10% total
         
         console.log("APY rates configured:");
         console.log("- USDY (Billings): 4.5%");
@@ -102,10 +123,10 @@ contract DeployAllRWAContracts is Script {
         console.log("- mETH (Instant): 10.0%");
 
         // Mint initial tokens for testing
-        MockUSDY(mockUSDY).emergencyMint(deployer, TEST_MINT_AMOUNT);
-        MockMUSD(mockMUSD).emergencyMint(deployer, TEST_MINT_AMOUNT);
-        MockUSDe(mockUSDe).emergencyMint(deployer, TEST_MINT_AMOUNT);
-        MockmETH(mockMETH).emergencyMint(deployer, TEST_MINT_AMOUNT);
+        MockUSDYUpgradeable(mockUSDY).emergencyMint(deployer, TEST_MINT_AMOUNT);
+        MockMUSDUpgradeable(mockMUSD).emergencyMint(deployer, TEST_MINT_AMOUNT);
+        MockUSDeUpgradeable(mockUSDe).emergencyMint(deployer, TEST_MINT_AMOUNT);
+        MockmETHUpgradeable(mockMETH).emergencyMint(deployer, TEST_MINT_AMOUNT);
         
         console.log("Minted 1000 tokens of each type for testing");
 
@@ -115,12 +136,12 @@ contract DeployAllRWAContracts is Script {
         console.log("Contracts deployed with initial redemption values");
 
         // Get updated redemption values
-        uint256 usdyRedemptionValue = MockUSDY(mockUSDY).redemptionValue();
-        uint256 musdRedemptionValue = MockMUSD(mockMUSD).redemptionValue();
-        uint256 usdeRedemptionValue = MockUSDe(mockUSDe).redemptionValue();
-        uint256 methRedemptionValue = MockmETH(mockMETH).redemptionValue();
+        uint256 usdyRedemptionValue = MockUSDYUpgradeable(mockUSDY).redemptionValue();
+        uint256 musdRedemptionValue = MockMUSDUpgradeable(mockMUSD).redemptionValue();
+        uint256 usdeRedemptionValue = MockUSDeUpgradeable(mockUSDe).redemptionValue();
+        uint256 methRedemptionValue = MockmETHUpgradeable(mockMETH).redemptionValue();
         
-        console.log("\nRedemption values after 30 days:");
+        console.log("\nRedemption values after deployment:");
         console.log("- USDY:", usdyRedemptionValue);
         console.log("- mUSD:", musdRedemptionValue);
         console.log("- USDe:", usdeRedemptionValue);
@@ -139,7 +160,6 @@ contract DeployAllRWAContracts is Script {
         // Output deployment summary
         console.log("\n=== DEPLOYMENT SUMMARY ===");
         console.log("Network: Mantle Sepolia (Chain ID: 5003)");
-        console.log("Deployer:", deployer);
         
         console.log("\nDeployed Contracts:");
         console.log("- MockUSDY:", mockUSDY);
@@ -167,10 +187,10 @@ contract DeployAllRWAContracts is Script {
         console.log("cast send", bucketVault, '"setRWAIntegrationEnabled(bool)" true');
 
         console.log("\n=== VERIFICATION COMMANDS ===");
-        console.log("forge verify-contract", mockUSDY, "contracts/MockUSDY.sol:MockUSDY");
-        console.log("forge verify-contract", mockMUSD, "contracts/MockMUSD.sol:MockMUSD");
-        console.log("forge verify-contract", mockUSDe, "contracts/MockUSDe.sol:MockUSDe");
-        console.log("forge verify-contract", mockMETH, "contracts/MockmETH.sol:MockmETH");
+        console.log("forge verify-contract", mockUSDY, "contracts/MockUSDY.sol:MockUSDYUpgradeable");
+        console.log("forge verify-contract", mockMUSD, "contracts/MockMUSD.sol:MockMUSDUpgradeable");
+        console.log("forge verify-contract", mockUSDe, "contracts/MockUSDe.sol:MockUSDeUpgradeable");
+        console.log("forge verify-contract", mockMETH, "contracts/MockmETH.sol:MockmETHUpgradeable");
 
         console.log("\n=== TESTING COMMANDS ===");
         console.log("Test RWA integration:");

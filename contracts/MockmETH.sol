@@ -4,11 +4,11 @@ pragma solidity ^0.8.19;
 import "./MockRWA.sol";
 
 /**
- * @title MockmETH
+ * @title MockmETHUpgradeable
  * @dev Mock implementation of Mantle mETH token for testnet development
  * Simulates value-accruing staking rewards with MEV simulation and variable rewards
  */
-contract MockmETH is MockRWA {
+contract MockmETHUpgradeable is MockRWAUpgradeable {
     uint256 public mevRewardPool; // Pool of MEV rewards to distribute
     uint256 public lastMevDistribution;
     uint256 public mevDistributionInterval; // Time between MEV distributions
@@ -21,11 +21,32 @@ contract MockmETH is MockRWA {
     event MEVRewardClaimed(address indexed user, uint256 rewardAmount);
     event StakingRewardAccrued(address indexed user, uint256 rewardAmount);
 
-    constructor(
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    /**
+     * @dev Initialize the contract
+     * @param name Token name
+     * @param symbol Token symbol
+     * @param initialAPY Initial APY in basis points
+     * @param owner Contract owner
+     */
+    function initialize(
         string memory name,
         string memory symbol,
-        uint256 initialAPY
-    ) MockRWA(name, symbol, initialAPY) {
+        uint256 initialAPY,
+        address owner
+    ) public initializer {
+        __MockRWA_init(name, symbol, initialAPY, owner);
+        __MockmETH_init_unchained(initialAPY);
+    }
+
+    /**
+     * @dev Initialize the contract (unchained)
+     */
+    function __MockmETH_init_unchained(uint256 initialAPY) internal onlyInitializing {
         baseStakingRate = initialAPY / 2; // Half of APY from base staking, half from MEV
         mevDistributionInterval = 1 hours; // Distribute MEV rewards every hour
         lastMevDistribution = block.timestamp;
@@ -144,6 +165,70 @@ contract MockmETH is MockRWA {
     function claimMEVRewards() external {
         _distributeMEVRewards();
         _claimMEVRewards(msg.sender);
+    }
+
+    /**
+     * @dev Claim accrued yield as additional tokens (standard interface)
+     * @return yieldClaimed Amount of yield claimed in token terms
+     */
+    function claimYield() external override returns (uint256 yieldClaimed) {
+        require(balanceOf(msg.sender) > 0, "No tokens to claim yield for");
+        
+        // Distribute and claim MEV rewards first
+        _distributeMEVRewards();
+        _claimMEVRewards(msg.sender);
+        
+        // Accrue yield before claiming
+        accrueYield();
+        
+        // Calculate yield earned
+        uint256 currentValue = (balanceOf(msg.sender) * redemptionValue) / 1e18;
+        uint256 originalValue = originalDeposits[msg.sender];
+        
+        if (currentValue > originalValue) {
+            uint256 yieldInUSDC = currentValue - originalValue;
+            
+            // Convert yield to tokens at current redemption value
+            yieldClaimed = (yieldInUSDC * 1e18) / redemptionValue;
+            
+            if (yieldClaimed > 0) {
+                // Mint yield tokens to user
+                _mint(msg.sender, yieldClaimed);
+                
+                // Update original deposits to include claimed yield (for compounding)
+                originalDeposits[msg.sender] = currentValue;
+                
+                emit YieldClaimed(msg.sender, yieldClaimed, yieldInUSDC);
+            }
+        }
+    }
+
+    /**
+     * @dev Compound yield by reinvesting it (automatic compounding)
+     * @return yieldCompounded Amount of yield compounded in USDC terms
+     */
+    function compoundYield() external override returns (uint256 yieldCompounded) {
+        require(balanceOf(msg.sender) > 0, "No tokens to compound yield for");
+        
+        // Distribute MEV rewards and accrue yield before compounding
+        _distributeMEVRewards();
+        accrueYield();
+        
+        // Calculate yield earned (including MEV rewards)
+        uint256 currentValue = (balanceOf(msg.sender) * redemptionValue) / 1e18;
+        uint256 originalValue = originalDeposits[msg.sender];
+        
+        if (currentValue > originalValue) {
+            yieldCompounded = currentValue - originalValue;
+            
+            if (yieldCompounded > 0) {
+                // Update original deposits to include compounded yield
+                // This increases the principal for future yield calculations
+                originalDeposits[msg.sender] = currentValue;
+                
+                emit YieldCompounded(msg.sender, yieldCompounded);
+            }
+        }
     }
 
     /**
