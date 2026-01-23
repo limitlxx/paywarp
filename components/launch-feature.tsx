@@ -48,7 +48,7 @@ export function LaunchFeature({ onComplete }: LaunchFeatureProps) {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-black flex items-center justify-center p-4">
       <div className="w-full max-w-4xl">
         {/* Progress Bar */}
         <div className="mb-8">
@@ -73,7 +73,7 @@ export function LaunchFeature({ onComplete }: LaunchFeatureProps) {
                   initial={{ scale: 0 }}
                   animate={{ scale: 1 }}
                   transition={{ delay: 0.2, type: "spring" }}
-                  className="mx-auto w-20 h-20 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center"
+                  className="mx-auto w-20 h-20 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center"
                 >
                   <Sparkles className="w-10 h-10 text-white" />
                 </motion.div>
@@ -83,27 +83,17 @@ export function LaunchFeature({ onComplete }: LaunchFeatureProps) {
                 </h1>
                 
                 <p className="text-xl text-white/80 max-w-2xl mx-auto">
-                  You're all set up! Let's explore the key features that will help you manage your finances like a pro.
+                  You're ready to start managing your finances with smart bucket allocations and automated savings.
                 </p>
               </div>
 
-              <div className="grid md:grid-cols-2 gap-6 max-w-2xl mx-auto">
-                <Card className="bg-white/10 backdrop-blur-sm border-white/20">
+              <div className="max-w-md mx-auto">
+                <Card className="bg-white/5 backdrop-blur-sm border-white/10">
                   <CardContent className="p-6 text-center">
-                    <Settings className="w-12 h-12 text-purple-400 mx-auto mb-4" />
-                    <h3 className="text-lg font-semibold text-white mb-2">Smart Settings</h3>
+                    <Settings className="w-12 h-12 text-blue-400 mx-auto mb-4" />
+                    <h3 className="text-lg font-semibold text-white mb-2">Configure Your Settings</h3>
                     <p className="text-white/70 text-sm">
-                      Configure your bucket allocations and automate your savings strategy
-                    </p>
-                  </CardContent>
-                </Card>
-
-                <Card className="bg-white/10 backdrop-blur-sm border-white/20">
-                  <CardContent className="p-6 text-center">
-                    <Receipt className="w-12 h-12 text-green-400 mx-auto mb-4" />
-                    <h3 className="text-lg font-semibold text-white mb-2">Expense Tracking</h3>
-                    <p className="text-white/70 text-sm">
-                      Scan receipts with AI and track expenses automatically on blockchain
+                      Set up your bucket allocations and preferences to get started
                     </p>
                   </CardContent>
                 </Card>
@@ -112,297 +102,100 @@ export function LaunchFeature({ onComplete }: LaunchFeatureProps) {
               <Button
                 onClick={handleNext}
                 size="lg"
-                className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white px-8 py-4 text-lg"
+                className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-8 py-4 text-lg"
               >
-                Let's Get Started
+                Get Started
                 <ArrowRight className="ml-2 w-5 h-5" />
               </Button>
             </motion.div>
           )}
 
-          {currentStep === 'settings-preview' && (
+          {currentStep === 'settings' && (
             <motion.div
-              key="settings-preview"
+              key="settings"
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
               className="space-y-8"
             >
               <div className="text-center space-y-4">
-                <div className="mx-auto w-16 h-16 bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full flex items-center justify-center">
+                <div className="mx-auto w-16 h-16 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center">
                   <Settings className="w-8 h-8 text-white" />
                 </div>
                 
                 <h2 className="text-3xl font-bold text-white">
-                  Smart Financial Settings
+                  Configure Your Financial Settings
                 </h2>
                 
                 <p className="text-white/80 max-w-2xl mx-auto">
-                  Configure how your money is automatically allocated across different buckets for optimal financial management.
+                  This is the first and most important step. Set up your bucket allocations to automatically manage your money across different financial goals.
                 </p>
               </div>
 
-              <div className="grid md:grid-cols-2 gap-6">
-                <Card className="bg-white/10 backdrop-blur-sm border-white/20">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-white">
-                      <Percent className="w-5 h-5 text-purple-400" />
-                      Bucket Allocations
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {settings.bucketAllocations.slice(0, 3).map((bucket) => (
-                      <div key={bucket.id} className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <div 
-                            className="w-3 h-3 rounded-full"
-                            style={{ backgroundColor: bucket.color }}
-                          />
-                          <span className="text-white/90 text-sm">{bucket.name}</span>
-                        </div>
-                        <Badge variant="secondary" className="bg-white/20 text-white">
-                          {bucket.percentage}%
-                        </Badge>
+              <div className="grid md:grid-cols-2 gap-6 max-w-3xl mx-auto">
+                <Card className="bg-white/5 backdrop-blur-sm border-white/10">
+                  <CardContent className="p-6">
+                    <div className="flex items-center gap-3 mb-4">
+                      <Percent className="w-6 h-6 text-blue-400" />
+                      <h3 className="text-lg font-semibold text-white">Bucket Allocations</h3>
+                    </div>
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle className="w-4 h-4 text-green-400" />
+                        <span className="text-white/90 text-sm">Billings & Expenses</span>
                       </div>
-                    ))}
-                    <div className="pt-2 border-t border-white/20">
-                      <p className="text-xs text-white/60">
-                        + {settings.bucketAllocations.length - 3} more buckets
-                      </p>
+                      <div className="flex items-center gap-2">
+                        <CheckCircle className="w-4 h-4 text-green-400" />
+                        <span className="text-white/90 text-sm">Savings Goals</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <CheckCircle className="w-4 h-4 text-green-400" />
+                        <span className="text-white/90 text-sm">Growth Investments</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <CheckCircle className="w-4 h-4 text-green-400" />
+                        <span className="text-white/90 text-sm">Instant Access</span>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
 
-                <Card className="bg-white/10 backdrop-blur-sm border-white/20">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-white">
-                      <Target className="w-5 h-5 text-green-400" />
-                      Key Features
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="flex items-center gap-2">
-                      <CheckCircle className="w-4 h-4 text-green-400" />
-                      <span className="text-white/90 text-sm">Auto-balance allocations</span>
+                <Card className="bg-white/5 backdrop-blur-sm border-white/10">
+                  <CardContent className="p-6">
+                    <div className="flex items-center gap-3 mb-4">
+                      <Target className="w-6 h-6 text-purple-400" />
+                      <h3 className="text-lg font-semibold text-white">Smart Features</h3>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <CheckCircle className="w-4 h-4 text-green-400" />
-                      <span className="text-white/90 text-sm">Session key automation</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <CheckCircle className="w-4 h-4 text-green-400" />
-                      <span className="text-white/90 text-sm">Token allowance management</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <CheckCircle className="w-4 h-4 text-green-400" />
-                      <span className="text-white/90 text-sm">Smart notifications</span>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-
-              <div className="flex justify-center gap-4">
-                <Button
-                  onClick={handleSkipToSettings}
-                  variant="outline"
-                  className="border-white/30 text-white hover:bg-white/10"
-                >
-                  Configure Now
-                </Button>
-                <Button
-                  onClick={handleNext}
-                  className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white"
-                >
-                  Next: Expenses
-                  <ChevronRight className="ml-2 w-4 h-4" />
-                </Button>
-              </div>
-            </motion.div>
-          )}
-
-          {currentStep === 'expenses-preview' && (
-            <motion.div
-              key="expenses-preview"
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -20 }}
-              className="space-y-8"
-            >
-              <div className="text-center space-y-4">
-                <div className="mx-auto w-16 h-16 bg-gradient-to-r from-green-500 to-emerald-500 rounded-full flex items-center justify-center">
-                  <Receipt className="w-8 h-8 text-white" />
-                </div>
-                
-                <h2 className="text-3xl font-bold text-white">
-                  AI-Powered Expense Tracking
-                </h2>
-                
-                <p className="text-white/80 max-w-2xl mx-auto">
-                  Scan receipts with advanced OCR technology and automatically track expenses on the blockchain.
-                </p>
-              </div>
-
-              <div className="grid md:grid-cols-2 gap-6">
-                <Card className="bg-white/10 backdrop-blur-sm border-white/20">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-white">
-                      <FileSearch className="w-5 h-5 text-green-400" />
-                      OCR Features
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="flex items-center gap-2">
-                      <CheckCircle className="w-4 h-4 text-green-400" />
-                      <span className="text-white/90 text-sm">Instant receipt scanning</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <CheckCircle className="w-4 h-4 text-green-400" />
-                      <span className="text-white/90 text-sm">AI-powered data extraction</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <CheckCircle className="w-4 h-4 text-green-400" />
-                      <span className="text-white/90 text-sm">Business type detection</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <CheckCircle className="w-4 h-4 text-green-400" />
-                      <span className="text-white/90 text-sm">Item-level breakdown</span>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="bg-white/10 backdrop-blur-sm border-white/20">
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2 text-white">
-                      <Wallet className="w-5 h-5 text-blue-400" />
-                      Blockchain Integration
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="flex items-center gap-2">
-                      <CheckCircle className="w-4 h-4 text-green-400" />
-                      <span className="text-white/90 text-sm">Permanent expense records</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <CheckCircle className="w-4 h-4 text-green-400" />
-                      <span className="text-white/90 text-sm">Recurring expense automation</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <CheckCircle className="w-4 h-4 text-green-400" />
-                      <span className="text-white/90 text-sm">Expense verification</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <CheckCircle className="w-4 h-4 text-green-400" />
-                      <span className="text-white/90 text-sm">Real-time analytics</span>
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle className="w-4 h-4 text-green-400" />
+                        <span className="text-white/90 text-sm">Auto-balance allocations</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <CheckCircle className="w-4 h-4 text-green-400" />
+                        <span className="text-white/90 text-sm">Session key automation</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <CheckCircle className="w-4 h-4 text-green-400" />
+                        <span className="text-white/90 text-sm">Yield optimization</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <CheckCircle className="w-4 h-4 text-green-400" />
+                        <span className="text-white/90 text-sm">Smart notifications</span>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
               </div>
 
               <div className="text-center">
-                <Card className="bg-gradient-to-r from-green-500/20 to-emerald-500/20 backdrop-blur-sm border-green-400/30 max-w-md mx-auto">
-                  <CardContent className="p-6">
-                    <TrendingUp className="w-8 h-8 text-green-400 mx-auto mb-3" />
-                    <h3 className="text-lg font-semibold text-white mb-2">Smart Analytics</h3>
-                    <p className="text-white/80 text-sm">
-                      Get insights into your spending patterns and optimize your budget automatically
-                    </p>
-                  </CardContent>
-                </Card>
-              </div>
-
-              <div className="flex justify-center gap-4">
                 <Button
-                  onClick={handleSkipToExpenses}
-                  variant="outline"
-                  className="border-white/30 text-white hover:bg-white/10"
-                >
-                  Try Expense Tracking
-                </Button>
-                <Button
-                  onClick={handleNext}
-                  className="bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white"
-                >
-                  Complete Setup
-                  <ChevronRight className="ml-2 w-4 h-4" />
-                </Button>
-              </div>
-            </motion.div>
-          )}
-
-          {currentStep === 'complete' && (
-            <motion.div
-              key="complete"
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.9 }}
-              className="text-center space-y-8"
-            >
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                transition={{ delay: 0.2, type: "spring" }}
-                className="mx-auto w-24 h-24 bg-gradient-to-r from-green-500 to-emerald-500 rounded-full flex items-center justify-center"
-              >
-                <CheckCircle className="w-12 h-12 text-white" />
-              </motion.div>
-              
-              <div className="space-y-4">
-                <h2 className="text-4xl font-bold text-white">
-                  You're All Set!
-                </h2>
-                
-                <p className="text-xl text-white/80 max-w-2xl mx-auto">
-                  Welcome to the future of personal finance. Your PayWarp journey begins now!
-                </p>
-              </div>
-
-              <div className="grid md:grid-cols-3 gap-4 max-w-3xl mx-auto">
-                <Card className="bg-white/10 backdrop-blur-sm border-white/20">
-                  <CardContent className="p-4 text-center">
-                    <Settings className="w-8 h-8 text-purple-400 mx-auto mb-2" />
-                    <h4 className="text-white font-medium">Settings</h4>
-                    <p className="text-white/60 text-xs">Configure your preferences</p>
-                  </CardContent>
-                </Card>
-
-                <Card className="bg-white/10 backdrop-blur-sm border-white/20">
-                  <CardContent className="p-4 text-center">
-                    <Receipt className="w-8 h-8 text-green-400 mx-auto mb-2" />
-                    <h4 className="text-white font-medium">Expenses</h4>
-                    <p className="text-white/60 text-xs">Track your spending</p>
-                  </CardContent>
-                </Card>
-
-                <Card className="bg-white/10 backdrop-blur-sm border-white/20">
-                  <CardContent className="p-4 text-center">
-                    <TrendingUp className="w-8 h-8 text-blue-400 mx-auto mb-2" />
-                    <h4 className="text-white font-medium">Dashboard</h4>
-                    <p className="text-white/60 text-xs">Monitor your progress</p>
-                  </CardContent>
-                </Card>
-              </div>
-
-              <div className="flex justify-center gap-4">
-                <Button
-                  onClick={handleSkipToSettings}
-                  variant="outline"
-                  className="border-white/30 text-white hover:bg-white/10"
+                  onClick={handleGoToSettings}
+                  size="lg"
+                  className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white px-8 py-4 text-lg"
                 >
                   Go to Settings
-                </Button>
-                <Button
-                  onClick={handleSkipToExpenses}
-                  variant="outline"
-                  className="border-white/30 text-white hover:bg-white/10"
-                >
-                  Try Expenses
-                </Button>
-                <Button
-                  onClick={handleSkipToDashboard}
-                  className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white"
-                >
-                  Go to Dashboard
-                  <ArrowRight className="ml-2 w-4 h-4" />
+                  <ArrowRight className="ml-2 w-5 h-5" />
                 </Button>
               </div>
             </motion.div>
