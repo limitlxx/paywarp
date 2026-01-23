@@ -130,6 +130,7 @@ export default function Dashboard() {
       monthlyInflow,
       monthlyOutflow,
       spendableBalance,
+      hasUSDCBalance,
       transactionCount: allTxs.length,
       recentCount: recentTransactions.length
     }
@@ -339,7 +340,7 @@ export default function Dashboard() {
                       `$${stats.totalBalance.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
                     )}
                   </p>
-                  {!isLoading && stats.totalBalance > stats.usdcBalance && (
+                  {!isLoading && stats.hasUSDCBalance && stats.totalBalance > stats.usdcBalance && (
                     <p className="text-xs text-green-400 mt-1">
                       ${stats.usdcBalance.toLocaleString('en-US', { maximumFractionDigits: 2 })} USDC + ${(stats.rwaTokenValue + stats.yieldEarned).toLocaleString('en-US', { maximumFractionDigits: 2 })} RWA + Yield
                     </p>
