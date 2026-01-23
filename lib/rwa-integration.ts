@@ -276,13 +276,30 @@ export class RWAIntegration {
       try {
         const bucketVaultAddress = process.env.NEXT_PUBLIC_BUCKET_VAULT_SEPOLIA as `0x${string}`
         
-        const [tokenBalance, currentValue, yieldEarned] = await Promise.all([
-          this.queueRequest(() => this.publicClient.readContract({
-            address: usdyToken.address as `0x${string}`,
-            abi: this.RWA_ABI,
-            functionName: 'balanceOf',
-            args: [bucketVaultAddress]
-          })),
+        // First check if the bucket vault has any token balance
+        const tokenBalance = await this.queueRequest(() => this.publicClient.readContract({
+          address: usdyToken.address as `0x${string}`,
+          abi: this.RWA_ABI,
+          functionName: 'balanceOf',
+          args: [bucketVaultAddress]
+        }))
+
+        const tokenAmount = Number(formatUnits(tokenBalance as bigint, 18))
+        
+        // If no tokens, return zero balance immediately
+        if (tokenAmount === 0) {
+          const zeroBalance = {
+            usdcAmount: 0,
+            tokenAmount: 0,
+            currentValue: 0,
+            yieldEarned: 0
+          }
+          this.setCachedBalance(cacheKey, zeroBalance)
+          return zeroBalance
+        }
+
+        // Only fetch additional data if there are actual tokens
+        const [currentValue, yieldEarned] = await Promise.all([
           this.queueRequest(() => this.publicClient.readContract({
             address: usdyToken.address as `0x${string}`,
             abi: this.RWA_ABI,
@@ -297,7 +314,6 @@ export class RWAIntegration {
           }))
         ])
 
-        const tokenAmount = Number(formatUnits(tokenBalance as bigint, 18))
         const currentValueUSD = Number(formatUnits(currentValue as bigint, 6))
         const yieldEarnedUSD = Number(formatUnits(yieldEarned as bigint, 6))
         const originalUSDC = currentValueUSD - yieldEarnedUSD
@@ -353,13 +369,30 @@ export class RWAIntegration {
       try {
         const bucketVaultAddress = process.env.NEXT_PUBLIC_BUCKET_VAULT_SEPOLIA as `0x${string}`
         
-        const [tokenBalance, currentValue, yieldEarned] = await Promise.all([
-          this.queueRequest(() => this.publicClient.readContract({
-            address: musdToken.address as `0x${string}`,
-            abi: this.RWA_ABI,
-            functionName: 'balanceOf',
-            args: [bucketVaultAddress]
-          })),
+        // First check if the bucket vault has any token balance
+        const tokenBalance = await this.queueRequest(() => this.publicClient.readContract({
+          address: musdToken.address as `0x${string}`,
+          abi: this.RWA_ABI,
+          functionName: 'balanceOf',
+          args: [bucketVaultAddress]
+        }))
+
+        const tokenAmount = Number(formatUnits(tokenBalance as bigint, 18))
+        
+        // If no tokens, return zero balance immediately
+        if (tokenAmount === 0) {
+          const zeroBalance = {
+            usdcAmount: 0,
+            tokenAmount: 0,
+            currentValue: 0,
+            yieldEarned: 0
+          }
+          this.setCachedBalance(cacheKey, zeroBalance)
+          return zeroBalance
+        }
+
+        // Only fetch additional data if there are actual tokens
+        const [currentValue, yieldEarned] = await Promise.all([
           this.queueRequest(() => this.publicClient.readContract({
             address: musdToken.address as `0x${string}`,
             abi: this.RWA_ABI,
@@ -374,7 +407,6 @@ export class RWAIntegration {
           }))
         ])
 
-        const tokenAmount = Number(formatUnits(tokenBalance as bigint, 18))
         const currentValueUSD = Number(formatUnits(currentValue as bigint, 6))
         const yieldEarnedUSD = Number(formatUnits(yieldEarned as bigint, 6))
         const originalUSDC = currentValueUSD - yieldEarnedUSD
@@ -430,13 +462,30 @@ export class RWAIntegration {
       try {
         const bucketVaultAddress = process.env.NEXT_PUBLIC_BUCKET_VAULT_SEPOLIA as `0x${string}`
         
-        const [tokenBalance, currentValue, yieldEarned] = await Promise.all([
-          this.queueRequest(() => this.publicClient.readContract({
-            address: usdeToken.address as `0x${string}`,
-            abi: this.RWA_ABI,
-            functionName: 'balanceOf',
-            args: [bucketVaultAddress]
-          })),
+        // First check if the bucket vault has any token balance
+        const tokenBalance = await this.queueRequest(() => this.publicClient.readContract({
+          address: usdeToken.address as `0x${string}`,
+          abi: this.RWA_ABI,
+          functionName: 'balanceOf',
+          args: [bucketVaultAddress]
+        }))
+
+        const tokenAmount = Number(formatUnits(tokenBalance as bigint, 18))
+        
+        // If no tokens, return zero balance immediately
+        if (tokenAmount === 0) {
+          const zeroBalance = {
+            usdcAmount: 0,
+            tokenAmount: 0,
+            currentValue: 0,
+            yieldEarned: 0
+          }
+          this.setCachedBalance(cacheKey, zeroBalance)
+          return zeroBalance
+        }
+
+        // Only fetch additional data if there are actual tokens
+        const [currentValue, yieldEarned] = await Promise.all([
           this.queueRequest(() => this.publicClient.readContract({
             address: usdeToken.address as `0x${string}`,
             abi: this.RWA_ABI,
@@ -451,7 +500,6 @@ export class RWAIntegration {
           }))
         ])
 
-        const tokenAmount = Number(formatUnits(tokenBalance as bigint, 18))
         const currentValueUSD = Number(formatUnits(currentValue as bigint, 6))
         const yieldEarnedUSD = Number(formatUnits(yieldEarned as bigint, 6))
         const originalUSDC = currentValueUSD - yieldEarnedUSD
@@ -507,13 +555,30 @@ export class RWAIntegration {
       try {
         const bucketVaultAddress = process.env.NEXT_PUBLIC_BUCKET_VAULT_SEPOLIA as `0x${string}`
         
-        const [tokenBalance, currentValue, yieldEarned] = await Promise.all([
-          this.queueRequest(() => this.publicClient.readContract({
-            address: methToken.address as `0x${string}`,
-            abi: this.RWA_ABI,
-            functionName: 'balanceOf',
-            args: [bucketVaultAddress]
-          })),
+        // First check if the bucket vault has any token balance
+        const tokenBalance = await this.queueRequest(() => this.publicClient.readContract({
+          address: methToken.address as `0x${string}`,
+          abi: this.RWA_ABI,
+          functionName: 'balanceOf',
+          args: [bucketVaultAddress]
+        }))
+
+        const tokenAmount = Number(formatUnits(tokenBalance as bigint, 18))
+        
+        // If no tokens, return zero balance immediately
+        if (tokenAmount === 0) {
+          const zeroBalance = {
+            usdcAmount: 0,
+            tokenAmount: 0,
+            currentValue: 0,
+            yieldEarned: 0
+          }
+          this.setCachedBalance(cacheKey, zeroBalance)
+          return zeroBalance
+        }
+
+        // Only fetch additional data if there are actual tokens
+        const [currentValue, yieldEarned] = await Promise.all([
           this.queueRequest(() => this.publicClient.readContract({
             address: methToken.address as `0x${string}`,
             abi: this.RWA_ABI,
@@ -528,7 +593,6 @@ export class RWAIntegration {
           }))
         ])
 
-        const tokenAmount = Number(formatUnits(tokenBalance as bigint, 18))
         const currentValueUSD = Number(formatUnits(currentValue as bigint, 6))
         const yieldEarnedUSD = Number(formatUnits(yieldEarned as bigint, 6))
         const originalUSDC = currentValueUSD - yieldEarnedUSD

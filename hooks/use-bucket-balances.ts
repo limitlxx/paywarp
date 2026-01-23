@@ -164,24 +164,35 @@ export function useBucketBalances(): BucketBalancesReturn {
       return;
     }
 
-    // Start yield polling
-    yieldPollingService.startPolling(address);
+    // Only start yield polling if user has data (to avoid fetching for completely new users)
+    const hasData = data && data.some(result => 
+      result.status === 'success' && result.result && 
+      (result.result as any).balance > 0n
+    );
 
-    // Subscribe to yield updates
-    const unsubscribe = yieldPollingService.onYieldUpdate((newYields) => {
-      setYieldData(newYields);
-    });
+    if (hasData) {
+      // Start yield polling
+      yieldPollingService.startPolling(address);
 
-    // Get initial yield data
-    yieldPollingService.refreshYields().then((yields) => {
-      setYieldData(yields);
-    });
+      // Subscribe to yield updates
+      const unsubscribe = yieldPollingService.onYieldUpdate((newYields) => {
+        setYieldData(newYields);
+      });
 
-    return () => {
-      unsubscribe();
-      yieldPollingService.stopPolling();
-    };
-  }, [address]);
+      // Get initial yield data
+      yieldPollingService.refreshYields().then((yields) => {
+        setYieldData(yields);
+      });
+
+      return () => {
+        unsubscribe();
+        yieldPollingService.stopPolling();
+      };
+    } else {
+      // For new users with no balance, set empty yield data
+      setYieldData(null);
+    }
+  }, [address, data]);
 
   // Fetch RWA balances for RWA-enabled buckets
   const fetchRWABalances = useCallback(async () => {
@@ -190,6 +201,23 @@ export function useBucketBalances(): BucketBalancesReturn {
     setIsRWALoading(true);
     const newRwaBalances: Record<string, { usdy?: RWABalance; musd?: RWABalance; usde?: RWABalance; meth?: RWABalance }> = {};
     const newRwaErrors: Record<string, string> = {};
+
+    // Check if user has any USDC balance first
+    const hasAnyUSDCBalance = data && data.some((result, index) => {
+      if (result.status === 'success' && result.result) {
+        const bucketData = result.result as unknown as { balance: bigint };
+        return bucketData.balance > 0n;
+      }
+      return false;
+    });
+
+    if (!hasAnyUSDCBalance) {
+      // User has no USDC balance, don't fetch RWA data
+      setRwaBalances({});
+      setRwaErrors({});
+      setIsRWALoading(false);
+      return;
+    }
 
     // Fetch RWA balances for each bucket type
     const rwaBuckets: BucketType[] = ['billings', 'savings', 'growth', 'instant'];
@@ -252,12 +280,16 @@ export function useBucketBalances(): BucketBalancesReturn {
     setRwaBalances(newRwaBalances);
     setRwaErrors(newRwaErrors);
     setIsRWALoading(false);
-  }, [address, yieldData]);
+  }, [address, yieldData, data]);
 
   // Fetch RWA balances when yield data updates
   useEffect(() => {
     if (yieldData && address) {
       fetchRWABalances();
+    } else {
+      // Clear RWA balances for users with no yield data
+      setRwaBalances({});
+      setRwaErrors({});
     }
   }, [yieldData, address, fetchRWABalances]);
 
@@ -307,49 +339,45 @@ export function useBucketBalances(): BucketBalancesReturn {
         lastYieldUpdate: bigint;
       };
 
-      // Get RWA-specific data for this bucket
-      const bucketYieldInfo = yieldData?.[name as keyof BucketYields];
-      const bucketRwaBalances = rwaBalances[name];
+      // Check if user has any actual USDC balance - if not, don't show RWA data
+      const hasUSDCBalance = bucketData.balance > 0n;
       
-      // Calculate total RWA token balance from all RWA tokens
-      const usdyTokenBalance = bucketRwaBalances?.usdy?.tokenAmount || 0;
-      const musdTokenBalance = bucketRwaBalances?.musd?.tokenAmount || 0;
-      const usdeTokenBalance = bucketRwaBalances?.usde?.tokenAmount || 0;
-      const methTokenBalance = bucketRwaBalances?.meth?.tokenAmount || 0;
+      // Get RWA-specific data for this bucket only if user has USDC balance
+      const bucketYieldInfo = hasUSDCBalance ? yieldData?.[name as keyof BucketYields] : null;
+      const bucketRwaBalances = hasUSDCBalance ? rwaBalances[name] : null;
+      
+      // Calculate total RWA token balance from all RWA tokens (only if user has USDC)
+      const usdyTokenBalance = hasUSDCBalance ? (bucketRwaBalances?.usdy?.tokenAmount || 0) : 0;
+      const musdTokenBalance = hasUSDCBalance ? (bucketRwaBalances?.musd?.tokenAmount || 0) : 0;
+      const usdeTokenBalance = hasUSDCBalance ? (bucketRwaBalances?.usde?.tokenAmount || 0) : 0;
+      const methTokenBalance = hasUSDCBalance ? (bucketRwaBalances?.meth?.tokenAmount || 0) : 0;
       const totalRwaTokenBalance = usdyTokenBalance + musdTokenBalance + usdeTokenBalance + methTokenBalance;
 
-      // Calculate total yield earned from all RWA tokens
-      const usdyYieldEarned = bucketRwaBalances?.usdy?.yieldEarned || 0;
-      const musdYieldEarned = bucketRwaBalances?.musd?.yieldEarned || 0;
-      const usdeYieldEarned = bucketRwaBalances?.usde?.yieldEarned || 0;
-      const methYieldEarned = bucketRwaBalances?.meth?.yieldEarned || 0;
+      // Calculate total yield earned from all RWA tokens (only if user has USDC)
+      const usdyYieldEarned = hasUSDCBalance ? (bucketRwaBalances?.usdy?.yieldEarned || 0) : 0;
+      const musdYieldEarned = hasUSDCBalance ? (bucketRwaBalances?.musd?.yieldEarned || 0) : 0;
+      const usdeYieldEarned = hasUSDCBalance ? (bucketRwaBalances?.usde?.yieldEarned || 0) : 0;
+      const methYieldEarned = hasUSDCBalance ? (bucketRwaBalances?.meth?.yieldEarned || 0) : 0;
       const totalRwaYieldEarned = usdyYieldEarned + musdYieldEarned + usdeYieldEarned + methYieldEarned;
-
-      // Calculate total current value from all RWA tokens
-      const usdyCurrentValue = bucketRwaBalances?.usdy?.currentValue || 0;
-      const musdCurrentValue = bucketRwaBalances?.musd?.currentValue || 0;
-      const usdeCurrentValue = bucketRwaBalances?.usde?.currentValue || 0;
-      const methCurrentValue = bucketRwaBalances?.meth?.currentValue || 0;
-      const totalRwaCurrentValue = usdyCurrentValue + musdCurrentValue + usdeCurrentValue + methCurrentValue;
 
       return {
         name,
         balance: bucketData.balance,
         yieldBalance: bucketData.yieldBalance,
-        isYielding: bucketData.isYielding || (bucketYieldInfo?.isYielding ?? false),
+        isYielding: hasUSDCBalance && (bucketData.isYielding || (bucketYieldInfo?.isYielding ?? false)),
         lastYieldUpdate: bucketData.lastYieldUpdate,
         formattedBalance: formatUnits(bucketData.balance, USDC_DECIMALS),
         formattedYield: formatUnits(bucketData.yieldBalance, USDC_DECIMALS),
-        // RWA-specific fields
+        // RWA-specific fields (only show if user has USDC balance)
         rwaTokenBalance: totalRwaTokenBalance,
-        pendingYield: bucketYieldInfo?.pending || 0,
-        apy: bucketYieldInfo?.apy || 0,
+        pendingYield: hasUSDCBalance ? (bucketYieldInfo?.pending || 0) : 0,
+        apy: hasUSDCBalance ? (bucketYieldInfo?.apy || 0) : 0,
         totalYieldEarned: totalRwaYieldEarned,
-        usdyBalance: bucketRwaBalances?.usdy,
-        musdBalance: bucketRwaBalances?.musd,
-        usdeBalance: bucketRwaBalances?.usde,
-        methBalance: bucketRwaBalances?.meth,
-        rwaLastUpdated: bucketYieldInfo?.lastUpdated,
+        usdyBalance: hasUSDCBalance ? bucketRwaBalances?.usdy : undefined,
+        musdBalance: hasUSDCBalance ? bucketRwaBalances?.musd : undefined,
+        usdeBalance: hasUSDCBalance ? bucketRwaBalances?.usde : undefined,
+        methBalance: hasUSDCBalance ? bucketRwaBalances?.meth : undefined,
+        rwaLastUpdated: hasUSDCBalance ? bucketYieldInfo?.lastUpdated : undefined,
         rwaError: rwaErrors[name],
       };
     });

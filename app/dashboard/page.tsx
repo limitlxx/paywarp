@@ -95,10 +95,11 @@ export default function Dashboard() {
       tx.timestamp >= thirtyDaysAgo
     )
 
-    // Calculate TOTAL balance including USDC + RWA tokens + yield
+    // Calculate TOTAL balance including USDC + RWA tokens + yield (only if user has USDC)
     const usdcBalance = Number(formattedTotalBalance)
-    const rwaTokenValue = totalRWAValue || 0
-    const yieldEarned = yieldSummary?.totalYieldEarned || 0
+    const hasUSDCBalance = usdcBalance > 0
+    const rwaTokenValue = hasUSDCBalance ? (totalRWAValue || 0) : 0
+    const yieldEarned = hasUSDCBalance ? (yieldSummary?.totalYieldEarned || 0) : 0
     const totalBalance = usdcBalance + rwaTokenValue + yieldEarned
 
     // Calculate monthly inflow (deposits + splits)
@@ -119,7 +120,7 @@ export default function Dashboard() {
 
     // Calculate spendable balance from actual bucket data
     const spendableBucket = buckets.find(b => b.name === 'spendable')
-    const spendableBalance = spendableBucket ? Number(spendableBucket.formattedBalance) : usdcBalance * 0.05
+    const spendableBalance = spendableBucket ? Number(spendableBucket.formattedBalance) : 0
 
     return {
       totalBalance,

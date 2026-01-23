@@ -265,8 +265,8 @@ export function BucketCard({
                   )}
                 </div>
 
-                {/* Enhanced RWA Balance Display */}
-                {(effectiveTokenBalance > 0 || effectiveTotalYieldEarned > 0 || effectiveCurrentRWAValue > 0 || effectiveAPY > 0) && (
+                {/* Enhanced RWA Balance Display - Only show if user has actual balances */}
+                {(balance > 0 && (effectiveTokenBalance > 0 || effectiveTotalYieldEarned > 0 || effectiveCurrentRWAValue > 0 || effectiveAPY > 0)) && (
                   <div className="space-y-3 p-3 rounded-lg bg-background/50 border border-border/50">
                     <div className="flex justify-between items-center">
                       <span className="text-xs font-medium text-muted-foreground">

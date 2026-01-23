@@ -201,10 +201,37 @@ export class YieldPollingService {
     const operationKey = `fetchBucketYield-${bucketType}`
     
     try {
-      // Use RWA error handler for resilient yield fetching
+      // Fetch RWA balances first to check if user has any tokens
+      const [usdyBalance, musdBalance] = await Promise.allSettled([
+        rwaIntegration.getUSDYBalance(bucketType),
+        rwaIntegration.getMUSDBalance(bucketType)
+      ])
+
+      // Extract balance data with fallbacks
+      const usdyData = usdyBalance.status === 'fulfilled' ? usdyBalance.value : this.getEmptyRWABalance()
+      const musdData = musdBalance.status === 'fulfilled' ? musdBalance.value : this.getEmptyRWABalance()
+
+      // Calculate total token balance
+      const totalTokenBalance = usdyData.tokenAmount + musdData.tokenAmount
+      const totalYieldEarned = usdyData.yieldEarned + musdData.yieldEarned
+
+      // If no tokens, return empty yield info immediately
+      if (totalTokenBalance === 0) {
+        return this.getEmptyBucketYieldInfo()
+      }
+
+      // Only fetch yield data if there are actual tokens
       const yieldData = await rwaErrorHandler.handleRWAContractFailure(
         async () => {
-          return await rwaIntegration.getCurrentYield(bucketType)
+          // This would call getCurrentYield if it existed
+          // For now, return basic yield data based on token balances
+          return {
+            currentAPY: this.getAPYForBucket(bucketType),
+            totalYieldEarned,
+            yieldToday: totalYieldEarned * 0.01, // Rough estimate
+            projectedYearlyYield: totalTokenBalance * this.getAPYForBucket(bucketType) / 100,
+            lastAccrualTime: new Date()
+          }
         },
         async () => {
           // Fallback: return basic yield data
@@ -220,19 +247,6 @@ export class YieldPollingService {
         operationKey
       )
       
-      // Fetch RWA balances with error handling
-      const [usdyBalance, musdBalance] = await Promise.allSettled([
-        rwaIntegration.getUSDYBalance(bucketType),
-        rwaIntegration.getMUSDBalance(bucketType)
-      ])
-
-      // Extract balance data with fallbacks
-      const usdyData = usdyBalance.status === 'fulfilled' ? usdyBalance.value : this.getEmptyRWABalance()
-      const musdData = musdBalance.status === 'fulfilled' ? musdBalance.value : this.getEmptyRWABalance()
-
-      // Calculate total token balance and pending yield
-      const totalTokenBalance = usdyData.tokenAmount + musdData.tokenAmount
-      const totalYieldEarned = usdyData.yieldEarned + musdData.yieldEarned
       const pendingYield = yieldData.yieldToday || 0
 
       return {
@@ -254,6 +268,17 @@ export class YieldPollingService {
       })
       
       return this.getEmptyBucketYieldInfo()
+    }
+  }
+
+  // Helper method to get APY for different bucket types
+  private getAPYForBucket(bucketType: BucketType): number {
+    switch (bucketType) {
+      case 'billings': return 4.5  // USDY APY
+      case 'savings': return 3.2   // mUSD APY
+      case 'growth': return 8.0    // USDe APY
+      case 'instant': return 10.0  // mETH APY
+      default: return 0
     }
   }
 
