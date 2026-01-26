@@ -261,7 +261,19 @@ export class RWAIntegration {
     }
 
     const usdyToken = this.tokenContracts.get('USDY')
-    if (!usdyToken || usdyToken.bucketType !== bucket) {
+    if (!usdyToken) {
+      const zeroBalance = {
+        usdcAmount: 0,
+        tokenAmount: 0,
+        currentValue: 0,
+        yieldEarned: 0
+      }
+      this.setCachedBalance(cacheKey, zeroBalance)
+      return zeroBalance
+    }
+
+    // Only show USDY balance for billings bucket (where it's allocated)
+    if (bucket !== 'billings') {
       const zeroBalance = {
         usdcAmount: 0,
         tokenAmount: 0,
@@ -354,7 +366,19 @@ export class RWAIntegration {
     }
 
     const musdToken = this.tokenContracts.get('mUSD')
-    if (!musdToken || musdToken.bucketType !== bucket) {
+    if (!musdToken) {
+      const zeroBalance = {
+        usdcAmount: 0,
+        tokenAmount: 0,
+        currentValue: 0,
+        yieldEarned: 0
+      }
+      this.setCachedBalance(cacheKey, zeroBalance)
+      return zeroBalance
+    }
+
+    // Only show mUSD balance for savings bucket (where it's allocated)
+    if (bucket !== 'savings') {
       const zeroBalance = {
         usdcAmount: 0,
         tokenAmount: 0,
@@ -447,7 +471,19 @@ export class RWAIntegration {
     }
 
     const usdeToken = this.tokenContracts.get('USDe')
-    if (!usdeToken || usdeToken.bucketType !== bucket) {
+    if (!usdeToken) {
+      const zeroBalance = {
+        usdcAmount: 0,
+        tokenAmount: 0,
+        currentValue: 0,
+        yieldEarned: 0
+      }
+      this.setCachedBalance(cacheKey, zeroBalance)
+      return zeroBalance
+    }
+
+    // Only show USDe balance for growth bucket (where it's allocated)
+    if (bucket !== 'growth') {
       const zeroBalance = {
         usdcAmount: 0,
         tokenAmount: 0,
@@ -540,8 +576,28 @@ export class RWAIntegration {
     }
 
     const methToken = this.tokenContracts.get('mETH')
-    if (!methToken || methToken.bucketType !== bucket) {
+    if (!methToken) {
       const zeroBalance = {
+        usdcAmount: 0,
+        tokenAmount: 0,
+        currentValue: 0,
+        yieldEarned: 0
+      }
+      this.setCachedBalance(cacheKey, zeroBalance)
+      return zeroBalance
+    }
+
+    // Only show mETH balance for instant bucket (where it's allocated)
+    if (bucket !== 'instant') {
+      const zeroBalance = {
+        usdcAmount: 0,
+        tokenAmount: 0,
+        currentValue: 0,
+        yieldEarned: 0
+      }
+      this.setCachedBalance(cacheKey, zeroBalance)
+      return zeroBalance
+    }
         usdcAmount: 0,
         tokenAmount: 0,
         currentValue: 0,
